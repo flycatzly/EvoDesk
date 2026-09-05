@@ -19,7 +19,7 @@ beforeEach(() => {
 });
 
 describe("GET /api/tasks", () => {
-  it("返回任务数组且触发周期投放(到期规则生成实例)", async () => {
+  it("GET 返回种子任务且 tick 正常接线", async () => {
     const res = await GET(req("/api/tasks"));
     expect(res.status).toBe(200);
     const data = await res.json();
@@ -29,6 +29,8 @@ describe("GET /api/tasks", () => {
   it("status 过滤生效", async () => {
     const res = await GET(req("/api/tasks?status=ready"));
     const data = await res.json();
+    // 种子含 2 条 ready;先断言非空,防止 every() 在空数组上空洞通过
+    expect(data.tasks.length).toBeGreaterThan(0);
     expect(data.tasks.every((t: { status: string }) => t.status === "ready")).toBe(true);
   });
 });
@@ -44,5 +46,12 @@ describe("POST /api/tasks", () => {
   it("缺标题返回 400", async () => {
     const res = await POST(req("/api/tasks", { method: "POST", body: JSON.stringify({}) }));
     expect(res.status).toBe(400);
+  });
+  it("due_date 非法格式静默归一为 null,合法 yyyy-mm-dd 原样存储", async () => {
+    const bad = await POST(req("/api/tasks", { method: "POST", body: JSON.stringify({ title: "t", due_date: "2026-9-6" }) }));
+    expect(bad.status).toBe(201);
+    expect((await bad.json()).task.dueDate).toBeNull();
+    const good = await POST(req("/api/tasks", { method: "POST", body: JSON.stringify({ title: "t", due_date: "2026-09-30" }) }));
+    expect((await good.json()).task.dueDate).toBe("2026-09-30");
   });
 });

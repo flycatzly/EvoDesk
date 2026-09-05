@@ -1252,6 +1252,12 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
+// 到期日只接受 yyyy-mm-dd(schema 头注的 UTC-ISO 约定:领域代码依赖字典序比较)。
+// 空串/垃圾值静默归一为 null 而非 400,保持个人工具的录入摩擦最小。(Task 10 评审修正,POST/PATCH 共用)
+const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+const normDate = (v: unknown): string | null =>
+  typeof v === "string" && dateRe.test(v) && !Number.isNaN(Date.parse(v)) ? v : null;
+
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const row = (await getDb().select().from(tasks).where(eq(tasks.id, id)).all())[0];
@@ -1273,7 +1279,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (Array.isArray(body.tags)) patch.tags = JSON.stringify(body.tags.slice(0, 5));
   if (["S", "M", "L"].includes(body.complexity)) patch.complexity = body.complexity;
   if (Number.isInteger(body.priority)) patch.priority = Math.min(3, Math.max(0, body.priority));
-  if ("due_date" in body) patch.dueDate = typeof body.due_date === "string" ? body.due_date : null;
+  if ("due_date" in body) patch.dueDate = normDate(body.due_date);
   if ("project_id" in body) patch.projectId = typeof body.project_id === "string" ? body.project_id : null;
   if ("flow_template_id" in body) patch.flowTemplateId = typeof body.flow_template_id === "string" ? body.flow_template_id : null;
 
