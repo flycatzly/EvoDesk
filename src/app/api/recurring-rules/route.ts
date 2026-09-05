@@ -26,16 +26,18 @@ export async function POST(req: NextRequest) {
   const next = new Date();
   next.setUTCHours(0, 0, 0, 0);
   next.setUTCDate(next.getUTCDate() + 1);
+  // 归一化与 POST /api/tasks 同契约:tickRecurring 会把 priority/tags 原样复制进生成的任务,绕过任务级校验,
+  // 必须在规则入口截断(priority 0-3、tags ≤5);weekday 仅 weekly 语义有效,非 weekly 一律存 null
   const rule = {
     id: crypto.randomUUID(),
     title: body.title.trim(),
     description: typeof body.description === "string" ? body.description : "",
-    tags: JSON.stringify(Array.isArray(body.tags) ? body.tags : []),
+    tags: JSON.stringify(Array.isArray(body.tags) ? body.tags.slice(0, 5) : []),
     complexity: ["S", "M", "L"].includes(body.complexity) ? body.complexity : "S",
-    priority: Number.isInteger(body.priority) ? body.priority : 1,
+    priority: Number.isInteger(body.priority) ? Math.min(3, Math.max(0, body.priority)) : 1,
     projectId: typeof body.project_id === "string" ? body.project_id : null,
     freq: body.freq,
-    weekday: Number.isInteger(body.weekday) ? body.weekday : null,
+    weekday: body.freq === "weekly" && Number.isInteger(body.weekday) ? body.weekday : null,
     enabled: true,
     nextRunAt: next.toISOString(),
     createdAt: new Date().toISOString(),

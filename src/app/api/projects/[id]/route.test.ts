@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
 import { createTestDb } from "@/lib/db/test-util";
 import { __setDbForTests } from "@/lib/db/client";
 import { seedIfEmpty } from "@/lib/db/seed";
