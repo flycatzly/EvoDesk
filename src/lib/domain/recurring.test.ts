@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nextRunAfter, tickRecurring } from "./recurring";
+import { nextRunAfter, tickRecurring, type Freq } from "./recurring";
 import { createTestDb } from "@/lib/db/test-util";
 import { recurringRules, tasks } from "@/lib/db/schema";
 
@@ -22,6 +22,16 @@ describe("nextRunAfter", () => {
   it("weekly(weekday=3 周三):周日 → 周三", () => {
     expect(nextRunAfter("weekly", 3, new Date("2026-09-06T00:00:00Z"))).toBe("2026-09-09T00:00:00.000Z");
   });
+  it("单调性:DST 跳变日(2026-03-08T00:00Z)三种 freq 仍严格晚于 from", () => {
+    const from = new Date("2026-03-08T00:00:00Z"); // America/New_York 春令时跳变日
+    const cases: [Freq, number | null][] = [["daily", null], ["weekdays", null], ["weekly", 3]];
+    for (const [freq, wd] of cases) {
+      expect(new Date(nextRunAfter(freq, wd, from)).getTime()).toBeGreaterThan(from.getTime());
+    }
+  });
+  it("weekly weekday 越界(7)按 %7 归一化为周日,不死循环", () => {
+    expect(nextRunAfter("weekly", 7, new Date("2026-09-06T00:00:00Z"))).toBe("2026-09-13T00:00:00.000Z");
+  });
 });
 
 describe("tickRecurring", () => {
@@ -36,12 +46,31 @@ describe("tickRecurring", () => {
     expect(t[0].recurringRuleId).toBeTruthy();
     const r = db.select().from(recurringRules).all() as (typeof recurringRules.$inferSelect)[];
     expect(r[0].nextRunAt).toBe("2026-09-07T00:00:00.000Z");
+    expect(r[0].lastTaskId).toBe(t[0].id); // 最近一次生成实例的 id
   });
   it("错过多天补齐为多条实例(上限 31)", () => {
     const db = createTestDb();
     db.insert(recurringRules).values(rule({ nextRunAt: "2026-08-01T00:00:00Z" })).run();
     const n = tickRecurring(db, NOW);
     expect(n).toBe(31); // 触发上限保护
+  });
+  it("追赶分批推进:第二次 tick 继续生成并收敛到未来", () => {
+    const db = createTestDb();
+    db.insert(recurringRules).values(rule({ nextRunAt: "2026-08-01T00:00:00Z" })).run();
+    expect(tickRecurring(db, NOW)).toBe(31); // 第一批触发上限
+    const r1 = db.select().from(recurringRules).all() as (typeof recurringRules.$inferSelect)[];
+    const afterFirst = r1[0].nextRunAt;
+    const second = tickRecurring(db, NOW);
+    expect(second).toBeGreaterThan(0);
+    const r2 = db.select().from(recurringRules).all() as (typeof recurringRules.$inferSelect)[];
+    expect(new Date(r2[0].nextRunAt).getTime()).toBeGreaterThan(new Date(afterFirst).getTime());
+    // 收敛:第二批(09-01..09-06 共 6 条)后 next_run_at 已在未来,第三次 tick 不再生成
+    expect(r2[0].nextRunAt).toBe("2026-09-07T00:00:00.000Z");
+    expect(tickRecurring(db, NOW)).toBe(0);
+    const t = db.select().from(tasks).all() as (typeof tasks.$inferSelect)[];
+    const latest = t.filter((x) => x.dueDate === "2026-09-06");
+    expect(latest).toHaveLength(1);
+    expect(r2[0].lastTaskId).toBe(latest[0].id); // 最后创建实例的 id
   });
   it("未启用或未到期不生成", () => {
     const db = createTestDb();
