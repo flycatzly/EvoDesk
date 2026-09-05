@@ -32,6 +32,10 @@ describe("nextRunAfter", () => {
   it("weekly weekday 越界(7)按 %7 归一化为周日,不死循环", () => {
     expect(nextRunAfter("weekly", 7, new Date("2026-09-06T00:00:00Z"))).toBe("2026-09-13T00:00:00.000Z");
   });
+  it("weekly 负 weekday(-4)按模 7 归一化为 3(周三),不死循环", () => {
+    // JS 的 % 保留符号:-4 % 7 === -4,直接比较 getUTCDay()(0-6)永不相等会死循环
+    expect(nextRunAfter("weekly", -4, new Date("2026-09-06T00:00:00Z"))).toBe("2026-09-09T00:00:00.000Z");
+  });
 });
 
 describe("tickRecurring", () => {

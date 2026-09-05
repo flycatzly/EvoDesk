@@ -15,8 +15,9 @@ export function nextRunAfter(freq: Freq, weekday: number | null, from: Date): st
     while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 1);
     return d.toISOString();
   }
-  // schema 无 CHECK 约束,越界 weekday(如 7)会使 while 永不终止;先归一化到 0-6(Task 13 zod 会在入口再校验)
-  const target = (weekday ?? 1) % 7;
+  // schema 无 CHECK 约束,越界 weekday(如 7)会使 while 永不终止;先归一化到 0-6(Task 13 zod 会在入口再校验)。
+  // JS 的 % 保留符号,负 weekday(-4 % 7 === -4)同样永不相等 → 加 7 再取模修正到 0-6。
+  const target = (((weekday ?? 1) % 7) + 7) % 7;
   while (d.getUTCDay() !== target) d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString();
 }

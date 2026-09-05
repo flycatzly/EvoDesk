@@ -21,10 +21,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "当前状态不可分诊" }, { status: 409 });
   }
 
-  // known_tags 仅用于提示词:解析损坏时不 500,降级为空列表
+  // known_tags 仅用于提示词:解析损坏时不 500,降级为空列表;
+  // 序列化契约(同 toApiTask):JSON 合法但非数组(null/123 等)也归一为 [],否则 join 崩溃导致无谓降级
   let knownTags: string[] = [];
   try {
-    knownTags = JSON.parse((db.select().from(settings).where(eq(settings.key, "known_tags")).all()[0] ?? { value: "[]" }).value) as string[];
+    const parsed: unknown = JSON.parse((db.select().from(settings).where(eq(settings.key, "known_tags")).all()[0] ?? { value: "[]" }).value);
+    knownTags = Array.isArray(parsed) ? parsed : [];
   } catch (err) {
     console.warn("[triage] known_tags 解析失败,按空列表处理:", err);
   }

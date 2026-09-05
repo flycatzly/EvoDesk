@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import { createTestDb } from "@/lib/db/test-util";
 import { __setDbForTests } from "@/lib/db/client";
 import { seedIfEmpty } from "@/lib/db/seed";
-import { executors, tasks, flowTemplates } from "@/lib/db/schema";
+import { executors, tasks, flowTemplates, settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { POST } from "./route";
 import { POST as POST_LIST } from "../../route";
@@ -54,5 +54,16 @@ describe("POST /api/tasks/[id]/triage", () => {
     expect(data.degraded).toBe(false);
     expect(data.task.tags).toEqual(["研究"]);
     expect(data.task.flowTemplateId).toBeTruthy();
+  });
+  it("known_tags 为合法 JSON 但非数组(如 123)时按空列表处理,不因 join 崩溃降级", async () => {
+    db.update(settings).set({ value: "123" }).where(eq(settings.key, "known_tags")).run();
+    db.update(executors).set({ enabled: true, model: "m1", apiBase: "https://x" }).where(eq(executors.name, "快速模型")).run();
+    const f = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: '{"tags":["研究"],"complexity":"M","reason":"ok"}' } }], usage: {}, model: "m1" }), { status: 200 }));
+    vi.stubGlobal("fetch", f);
+    const res = await POST(req(`/api/tasks/${taskId}/triage`), { params: Promise.resolve({ id: taskId }) });
+    const data = await res.json();
+    // 序列化契约(同 toApiTask):解析成功但非数组 → 归一为 [];LLM 正常返回时不应降级
+    expect(data.degraded).toBe(false);
+    expect(data.task.tags).toEqual(["研究"]);
   });
 });
