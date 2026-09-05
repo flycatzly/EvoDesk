@@ -14,12 +14,14 @@ const dateRe = /^\d{4}-\d{2}-\d{2}$/;
 const normDate = (v: unknown): string | null =>
   typeof v === "string" && dateRe.test(v) && !Number.isNaN(Date.parse(v)) ? v : null;
 
-// tags 列存 JSON 字符串;对外 API 统一还原为数组(测试契约:tags 以数组返回)
+// tags 列存 JSON 字符串;对外 API 统一还原为数组(测试契约:tags 以数组返回)。
+// 非数组/损坏数据一律归一为 [],避免下游(如 TriageCard 的 tags.join)拿到字符串崩溃。
 function toApi(row: typeof tasks.$inferSelect) {
   try {
-    return { ...row, tags: JSON.parse(row.tags) };
+    const parsed = JSON.parse(row.tags);
+    return { ...row, tags: Array.isArray(parsed) ? parsed : [] };
   } catch {
-    return row;
+    return { ...row, tags: [] };
   }
 }
 
@@ -36,7 +38,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const rows = db.select().from(tasks).where(eq(tasks.id, id)).all();
   const current = rows[0];
   if (!current) return NextResponse.json({ error: "not found" }, { status: 404 });
-  const body = await req.json().catch(() => ({}));
+  // body 可能是 null/数字/字符串等非对象 JSON,直接 "in" 会抛错 → 500;先归一为空对象
+  const raw = await req.json().catch(() => null);
+  const body = raw && typeof raw === "object" ? raw : {};
 
   const patch: Partial<typeof tasks.$inferInsert> = { updatedAt: new Date().toISOString() };
   if (typeof body.title === "string" && body.title.trim()) patch.title = body.title.trim();

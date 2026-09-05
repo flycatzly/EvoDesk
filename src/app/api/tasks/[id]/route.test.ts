@@ -39,6 +39,10 @@ describe("PATCH /api/tasks/[id]", () => {
     const res = await PATCH(req(`/api/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status: "done" }) }), { params: Promise.resolve({ id: taskId }) });
     expect(res.status).toBe(422);
   });
+  it("未知状态返回 400", async () => {
+    const res = await PATCH(req(`/api/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status: "bogus" }) }), { params: Promise.resolve({ id: taskId }) });
+    expect(res.status).toBe(400);
+  });
   it("可更新标题与标签", async () => {
     const res = await PATCH(req(`/api/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ title: "改名", tags: ["开发"] }) }), { params: Promise.resolve({ id: taskId }) });
     const data = await res.json();
