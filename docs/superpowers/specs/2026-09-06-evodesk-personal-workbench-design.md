@@ -16,6 +16,13 @@
 
 **一句话定位**:本地优先的个人"数字驾驶舱"——任务从收件箱进来,按"标签 × 复杂度"路由到流程模板,由异构执行器(AI / 人工 / 本地脚本)逐步处理,并能安全地操作本地电脑;执行数据反哺流程进化,越用越顺手。
 
+**高频场景(v1.3 明确,指导预置内容)**:每天/每周最常做的三件事——
+1. **管理多个项目的待办事项**(项目维度 + 今日清单);
+2. **追踪行业资讯并生成摘要**(预置"资讯摘要"流程模板,AI 提炼要点归档);
+3. **规划每日学习与健身计划**(周期任务自动投放)。
+
+**解决的问题**:将分散在邮件、日历、笔记应用中的信息统一收口到一处,并利用 AI 进行智能分析与辅助决策。
+
 ## 2. 设计原则与落地承诺
 
 | 原则 | 本设计中的落地 |
@@ -24,7 +31,7 @@
 | 信息可寻性 | 固定侧边栏 ≤8 项;全局 ⌘K 命令面板直达任意任务/页面(v1.1,先用侧边栏+看板筛选) |
 | 降低记忆负担 | 快速新增、一键分诊、继续执行三个高频动作常驻最显眼位置 |
 | 保持简洁(核心模块 5–9 个) | 完整版 7 个视图;MVP 只上 5 个,先减法后加法 |
-| 个性与灵活 | 浅色 / 深色 / 跟随系统主题;卡片流布局;侧边栏导航 |
+| 个性与灵活 | 浅色 / 深色 / 跟随系统主题(**默认深色 + 蓝紫强调色**);卡片流布局;**响应式:桌面侧边栏,手机折叠为抽屉/底部导航** |
 | 本地优先 | 数据全部在本地 SQLite 单文件(`data/evodesk.db`);无云端依赖;可安全执行本地命令/脚本;AI 不可用时整体降级为手动模式仍可用 |
 
 ## 3. 核心概念映射(EvoFlow → 工作台)
@@ -55,12 +62,13 @@ API 层    Route Handlers:/api/tasks · runs · templates · executors · evolut
 数据层    Drizzle ORM + SQLite(WAL)
 ```
 
-## 5. 数据模型(10 张表)
+## 5. 数据模型(15 张表)
 
 ### 5.1 tasks(任务)
 ```
 id TEXT PK · title · description(默认'') · tags(JSON 数组)
 complexity('S'|'M'|'L') · priority 0-3 · due_date?(ISO)
+project_id FK?(所属项目,多项目待办) · recurring_rule_id FK?(由周期规则生成的实例)
 status('inbox','triaging','ready','running','waiting_human','review','done','archived','canceled')
 flow_template_id FK?(路由选定,start 前可改) · created_at · updated_at
 ```
@@ -158,10 +166,34 @@ template_id? · related_template_id? · reason · detail(JSON)
 ### 5.9 settings(KV)
 JSON value:主题、成本预算、复盘触发阈值、路由默认偏好、**本地执行白名单目录**、**待人工超时阈值**、**启动器配置目录路径**等。
 
-### 5.10 种子数据(不含任何密钥;供应商档案一律经导入器产生)
-- 模板 3 条:S 轻量通道(快速执行→交付确认,2 步)/ M 标准流程(任务澄清→执行→自检→交付审核)/ L 深度流程(规划→执行→审查→修订→交付审核,可含 manual 步骤)
+### 5.11 projects + recurring_rules(项目与周期任务,v1.3)
+```
+projects:        id · name · color · archived · created_at
+recurring_rules: id · title · description? · tags JSON · complexity · priority · project_id?
+                 freq('daily','weekdays','weekly') · weekday?(weekly 时 0-6)
+                 enabled · next_run_at · last_task_id? · created_at
+```
+周期投放器:每次打开工作台/访问 API 时检查 `next_run_at ≤ now` 的启用规则 → 生成当日任务实例(关联 rule_id)→ 推进 next_run_at;错过未生成的(如三天没开机)补齐为"已过期"实例,不静默丢弃。
+
+### 5.12 notes(笔记/灵感速记,v1.3)
+```
+id · title · body · tags JSON · pinned · source('manual','chat','task','news_digest')
+task_id?(一键转任务后的关联) · vault_path?(存入 Obsidian 后的路径) · created_at · updated_at
+```
+
+### 5.13 chats + chat_messages(AI 对话台,v1.3)
+```
+chats:         id · title(首条消息自动生成) · default_executor_id? · created_at · updated_at
+chat_messages: id · chat_id FK · role('user','assistant','system') · content
+               executor_id?(该条所用执行器/模型) · model · tokens_in/out · cost_usd · created_at
+```
+模型来源复用 executors + provider_profiles(双协议),**不另建对话专属配置**;切换模型 = 换消息的 executor_id,按消息粒度记录,同会话内可随时切换。
+
+### 5.14 种子数据(不含任何密钥;供应商档案一律经导入器产生)
+- 模板 4 条:S 轻量通道(快速执行→交付确认,2 步)/ M 标准流程(任务澄清→执行→自检→交付审核)/ L 深度流程(规划→执行→审查→修订→交付审核,可含 manual 步骤)/**资讯摘要流程(M:粘贴链接或正文→要点提取→摘要卡生成→存入笔记并可归档)**
 - 执行器:人工;快速模型(任一便宜模型,role=triage/executor);强模型(role=planner/reviewer/evolution);**PowerShell 本地执行器(script,auto_approve=false,工作目录默认 `data/sandbox`)**
 - 快捷指令示例:**打开 Z.ai 控制台(url)**、**打开工作目录(command,explorer %WORKSPACE%)**、**打开 EvoDesk 数据文件夹(url)**
+- 项目示例:"工作台开发" 等两个示例项目;周期任务示例:**每日"英语学习 30 分钟"**、**每周一/三/五"健身 45 分钟"**;示例任务/笔记/对话各若干(打开即用,便于验收)
 - 标签集:写作 / 研究 / 事务 / 开发 / 生活 等常用标签
 
 ## 6. 任务处理全流程(状态机)
@@ -172,7 +204,7 @@ JSON value:主题、成本预算、复盘触发阈值、路由默认偏好、**�
                               取消 canceled                  评审 review → 完成 done → 归档 archived
 ```
 
-1. **捕获**:收件箱一句话录入;支持 `POST /api/tasks` 供外部投递;全局快速新增任意页面可用。
+1. **捕获**:收件箱一句话录入;支持 `POST /api/tasks` 供外部投递;全局快速新增任意页面可用;**周期任务投放器**到点自动生成实例进收件箱(学习/健身计划场景);笔记/对话可一键转任务。
 2. **分诊(复杂度自适应路由)**:见 §7。产出 tags + complexity + 流程模板,确认后任务就绪。
 3. **执行**:由模板实例化 flow_run,逐步推进,见 §8。
 4. **评审/完成**:末位 checkpoint 通过 → 评分(1–5)+ 结果备注 → done;可归档。
@@ -250,6 +282,7 @@ JSON value:主题、成本预算、复盘触发阈值、路由默认偏好、**�
 - **从档案派生执行器**:一档多位——opus 档 → 强模型角色(planner/reviewer/evolution),sonnet 档 → 均衡(executor),haiku 档 → 快速(triage);单价未知可后补,成本统计按 0 处理并标记。
 - 流式 SSE;tokens × 单价实时记成本;预算(settings 成本上限)超限 → 仪表盘风险雷达提示。
 - 密钥:`api_key_ref = 'env:XXX'`(推荐)或 `'plain:…'`(存本地文件,界面提示风险);档案密钥一律本地存储、界面掩码显示、日志绝不打印。
+- **AI 对话台**(v1.3):统一对话界面复用同一套执行器/档案;会话内按消息粒度切换模型(选择器按供应商分组,标注档位);流式 SSE;每条消息记 tokens/成本;未配置任何模型 → 空态引导至档案导入/执行器配置;对话结论一键转任务或存笔记。
 
 ### 10.2 本地执行安全模型(script 执行器与快捷指令共用)
 
@@ -280,17 +313,21 @@ JSON value:主题、成本预算、复盘触发阈值、路由默认偏好、**�
 
 ## 11. UI 设计
 
-**布局**:左侧固定侧边栏(Logo + 导航 + 快速新增按钮)+ 主内容卡片流;遵循 Z 型阅读;配色 ≤4 色 + 1 强调色;重要信息(已延期、待人工)用强调色突出;合理留白。
+**布局**:左侧固定侧边栏(分组导航:**核心**=仪表盘/收件箱/任务看板/日历 · **AI**=对话台 · **资产**=流程库/执行器与档案/知识库/笔记 · **系统**=设置;每项带图标)+ 主内容卡片流;遵循 Z 型阅读;配色 ≤4 色 + 1 强调色(**默认深色 + 蓝紫强调**,浅色可切换);重要信息(已延期、待人工)用强调色突出;合理留白;**响应式:手机端侧边栏折叠为抽屉 + 底部快捷导航**;操作按钮有明确 hover/点击反馈;顶部实时时钟与**每日激励语句(内置本地语句库按日轮换,不依赖网络)**。
 
-**视图清单(完整版 7 个,MVP 加粗 5 个)**:
+**视图清单(完整版 11 个,MVP 加粗 5 个)**:
 
-1. **仪表盘**(MVP 简版:核心数据 + 今日清单;M5 加入风险雷达与可复盘提示):核心数据(今日待办/执行中/待人工/本周成本)· 今日清单(已延期/今天截止/即将截止三态,延期置顶)· **快捷操作卡片(快捷指令:一键开网页/开目录/跑常用命令/启动 Claude Code 终端,command 与 launch 类走确认门)** · 风险雷达(延期任务/待人工超时/成本预算超限/低绩效模板,阈值可配)· 可复盘提示
+1. **仪表盘**(MVP 简版:核心数据 + 今日清单;M5 加入风险雷达与可复盘提示):核心数据(今日待办/执行中/待人工/本周成本)· 今日清单(已延期/今天截止/即将截止三态,延期置顶)· **信息聚合区:各项目进度条(待办/进行中/完成)** · **快捷操作卡片(快捷指令:一键开网页/开目录/跑常用命令/启动 Claude Code 终端,command 与 launch 类走确认门)** · 风险雷达(延期任务/待人工超时/成本预算超限/低绩效模板,阈值可配)· 可复盘提示
 2. **收件箱**(MVP):快速录入 + 分诊队列(一键 LLM 分诊 → 确认标签/复杂度/模板 → 就绪)
-3. **任务看板**(MVP):按状态分列(就绪/执行中/待人工/评审/完成),卡片带标签/复杂度/成本徽章,点卡进执行视图
+3. **任务看板**(MVP):按状态分列(就绪/执行中/待人工/评审/完成),卡片带标签/**项目**/复杂度/成本徽章,**支持按项目过滤**,点卡进执行视图
 4. **任务执行视图**(MVP):左侧步骤时间线(当前步高亮、完成步可展开看产出/成本),右侧当前步骤操作区(AI 流式输出 / 手动输入 / 审核通过-打回 / 重试-手动兜底 / **script:命令预览+确认执行+输出控制台**)
 5. **流程库**(MVP):模板卡片(版本谱系、绩效徽章:成功率/平均成本/耗时、活跃/实验/退役状态)、步骤预览、克隆/退役、进化事件时间线
 6. 执行器管理:模型/人工/**脚本**执行器 CRUD(llm:模型/端点/单价;script:shell/工作目录/超时/自动批准开关;**白名单目录管理**);**供应商档案区:扫描导入、档案列表(候选模型与档位展示)、从档案派生执行器(opus/sonnet/haiku → 强/均衡/快角色)、掩码显示密钥**
-7. 设置:主题切换、成本预算、复盘阈值、密钥配置指引、**启动器配置目录路径、generated 临时目录一键清空**
+7. **日历**(M5):月/周视图,展示任务 due_date 与周期任务实例,今天高亮;点日期看当日任务并可快速新增;外部日历(ICS)订阅 v2
+8. **AI 对话台**(M3):统一对话界面;会话内模型选择器(按供应商档案分组、标注档位与角色);流式输出;消息级成本记录;对话结论一键转任务/存笔记;未配置模型时空态引导
+9. **笔记速记**(M4):灵感速记卡片流(置顶/标签/搜索);一键转任务;一键存入 Obsidian;来源标记(手动/对话/任务/资讯摘要)
+10. **知识库 Obsidian**(M4):浏览 vault 目录树(默认 `D:\work\Obsidian\Obsidian`,**设置页可更改**;路径属 §10.2 白名单,仅允许 vault 内读写);Markdown 搜索、预览、新建/编辑/保存(写回 vault);任务/笔记"存入 Obsidian"生成 md(落 `02_笔记/` 等子目录);双链图谱与插件协议 v2
+11. 设置:主题切换、成本预算、复盘阈值、密钥配置指引、**启动器配置目录路径、Obsidian vault 路径、generated 临时目录一键清空**
 
 **全局**:`⌘K` 命令面板(搜任务/页面/新建任务,v1.1);全局快速新增(MVP);浅色/深色/跟随系统(MVP)。
 
@@ -321,32 +358,50 @@ GET/POST   /api/provider-profiles        供应商档案 CRUD
 POST       /api/provider-profiles/import 扫描目录导入(返回成功/跳过报告)
 POST       /api/provider-profiles/[id]/derive 从档案派生执行器(选档位+角色)
 DELETE     /api/provider-profiles/generated   清空 data/generated 临时目录
+GET/POST   /api/projects                 项目 CRUD(v1.3)
+GET/POST   /api/recurring-rules          周期任务规则 CRUD;GET /api/recurring-rules/tick 手动触发投放检查(v1.3)
+GET/POST   /api/notes                    笔记 CRUD · POST /api/notes/[id]/to-task 转任务 · POST /api/notes/[id]/to-vault 存入 Obsidian(v1.3)
+GET/POST   /api/chats                    会话列表/新建 · GET /api/chats/[id] 含消息(v1.3)
+POST       /api/chats/[id]/messages      发消息(executor_id 可指定 → 流式 SSE 回复)(v1.3)
+GET        /api/vault/tree?path=         Obsidian vault 目录树(vault_path 白名单校验)(v1.3)
+GET/PUT    /api/vault/file?path=         读/写 md 文件(仅 vault 内);GET /api/vault/search?q=(v1.3)
 GET        /api/stats                    仪表盘/统计聚合
 GET/PUT    /api/settings                 设置 KV
 ```
 
 ## 13. 测试策略
 
-- **单元(vitest)**:路由器打分与 fallback、进化统计聚合(打回率/成功率/人工接管率)、steps 变更纯函数(remove/add/replace/reorder/edit_prompt)、提示词变量渲染、任务状态机流转合法性、**供应商档案解析(缺 env 报错跳过、`_NAME` 别名不进候选、档位提取与去重)、临时 settings 生成(模型覆盖、非法字符替换)、破坏性命令模式匹配**
-- **集成**:Route Handlers 对临时 SQLite 库;LLM 用 mock server(流式/失败/重试路径,含 **anthropic 协议** mock);**script 执行器(超时终止、非零退出码、输出截断、确认门拦截/放行、白名单外目录拒绝)**;**launch DryRun(生成 settings、不开窗)**
+- **单元(vitest)**:路由器打分与 fallback、进化统计聚合(打回率/成功率/人工接管率)、steps 变更纯函数(remove/add/replace/reorder/edit_prompt)、提示词变量渲染、任务状态机流转合法性、**供应商档案解析(缺 env 报错跳过、`_NAME` 别名不进候选、档位提取与去重)、临时 settings 生成(模型覆盖、非法字符替换)、破坏性命令模式匹配**、**周期任务投放器(next_run_at 推进、错过补齐为过期)、vault 路径白名单(vault 外路径/`..` 穿越一律拒绝)**
+- **集成**:Route Handlers 对临时 SQLite 库;LLM 用 mock server(流式/失败/重试路径,含 **anthropic 协议** mock);**script 执行器(超时终止、非零退出码、输出截断、确认门拦截/放行、白名单外目录拒绝)**;**launch DryRun(生成 settings、不开窗)**;**对话流式(模型切换后 executor 记录正确)**
 - **冒烟**:创建任务 → 分诊(mock)→ start → 逐步执行(含一次打回、一次手动兜底、一次 script 步骤确认执行)→ 评分完成 全链路 API 测试
 
 ## 14. 范围边界(v1 不做,架构预留)
 
-拖拽看板(dnd-kit)、XL 任务拆子任务、日历视图、IM/邮件消息聚合、多用户与鉴权、桌面打包(Electron/Tauri,v2 可选)、移动端、**定时任务与文件监控(script 的 cron/watch 触发,v2)**、**远程机器控制(仅本机)**、**进程级沙箱隔离**(安全边界为确认门+白名单+留痕,见 §10.2)、**启动器档案中 hooks/plugins/mcpServers 的执行与迁移**(仅 launch 时原样透传或剥离,见 §10.3)、**供应商档案云同步与密钥加密存储**(本地明文,与原包同等安全级别,明示)。
+拖拽看板(dnd-kit)、XL 任务拆子任务、IM/邮件消息聚合、多用户与鉴权、桌面打包(Electron/Tauri,v2 可选)、移动端、**定时任务与文件监控(script 的 cron/watch 触发,v2)**、**远程机器控制(仅本机)**、**进程级沙箱隔离**(安全边界为确认门+白名单+留痕,见 §10.2)、**启动器档案中 hooks/plugins/mcpServers 的执行与迁移**(仅 launch 时原样透传或剥离,见 §10.3)、**供应商档案云同步与密钥加密存储**(本地明文,与原包同等安全级别,明示)、**资讯自动抓取(RSS/爬虫;v1 用"粘贴→AI 摘要"半自动)**、**外部日历集成(ICS 订阅/CalDAV)**、**Obsidian 双链图谱/插件协议/多 vault**、**单 HTML 文件交付版**(2026-09-06 决策:维持全栈,功能并入,单文件版不做——本地磁盘访问/脚本执行/Obsidian 接入无法在纯浏览器实现)。
 
 ## 15. 实施里程碑
 
 | 里程碑 | 内容 |
 |---|---|
-| M1 | 项目骨架 + 数据层(Drizzle schema + 迁移)+ 种子数据 + 主题骨架 |
-| M2 | 收件箱 + 分诊(LLM 分诊 + 路由器)+ 任务 CRUD |
-| M3 | 执行引擎(runner、SSE、兜底链)+ 任务执行视图 + 模型路由层(**双协议客户端 + provider_profiles**)+ script 执行器与安全门 |
-| M4 | 流程库 + 进化引擎(复盘/变体/diff/晋升/淘汰)+ 快捷指令(**含 launch 型:Claude Code 多开、档案导入器、派生执行器**) |
-| M5 | 仪表盘 + 风险雷达 + 统计 + 打磨(空态/加载态/错误态)|
+| M1 | 项目骨架 + 数据层(15 张表 schema + 迁移)+ 种子数据 + 主题骨架(深色默认+蓝紫强调、响应式栅格) |
+| M2 | 收件箱 + 分诊(LLM 分诊 + 路由器)+ 任务/项目 CRUD + 周期任务投放器 + 今日清单 |
+| M3 | 执行引擎(runner、SSE、兜底链)+ 任务执行视图 + 模型路由层(双协议客户端 + provider_profiles)+ script 执行器与安全门 + **AI 对话台** |
+| M4 | 流程库 + 进化引擎 + 快捷指令(含 launch 型)+ **笔记速记 + Obsidian 知识库** |
+| M5 | 仪表盘(风险雷达/项目进度)+ **日历视图** + 统计 + 打磨(空态/加载态/错误态/手机端适配) |
 
 ## 16. 变更记录
 
 - **2026-09-06 v1**:初稿定稿。
 - **2026-09-06 v1.1**:应用户要求新增"操作本地电脑"能力——script 执行器(executors 表扩展 shell/working_dir/timeout/auto_approve)、流程模板新增 script 步骤类型与 awaiting_confirmation 状态、快捷指令模块(quick_actions + quick_action_runs)、本地执行安全模型(§10.2:确认门/白名单/资源限制/全量留痕);相应更新执行引擎、UI、API、测试与里程碑。
-- **2026-09-06 v1.2**:审读 `D:\AI\setting\发布包`(Claude Code 多模型启动器)后并入其设计——新增 provider_profiles 供应商档案表(10 张表)、候选模型提取规则(primary+opus/sonnet/haiku,`_NAME` 仅别名)、双协议模型客户端(openai + anthropic,适配 api.z.ai/api/anthropic 等)、从档案派生执行器(档位→角色映射)、quick_actions 新增 launch 型(生成临时 settings 多开 Claude Code 终端,DryRun 支持)、导入器(坏配置跳过、失效段落自动提示)、密钥掩码与留痕;表数量 9→10。
+- **2026-09-06 v1.2**:审读 `D:\AI\setting\发布包`(Claude Code 多模型启动器)后并入其设计——新增 provider_profiles 供应商档案表、候选模型提取规则(primary+opus/sonnet/haiku,`_NAME` 仅别名)、双协议模型客户端(openai + anthropic,适配 api.z.ai/api/anthropic 等)、从档案派生执行器(档位→角色映射)、quick_actions 新增 launch 型(生成临时 settings 多开 Claude Code 终端,DryRun 支持)、导入器(坏配置跳过、失效段落自动提示)、密钥掩码与留痕。
+- **2026-09-06 v1.3**:并入个人工作台需求清单——明确三大高频场景(多项目待办/资讯摘要/学习健身计划)与"分散信息统一管理 + AI 辅助决策"的问题定位;新增 AI 对话台(chats/chat_messages,会话内模型切换,复用执行器与双协议客户端)、笔记速记(notes)、项目维度(projects)、周期任务(recurring_rules,支撑学习/健身计划)、日历视图(M5)、**Obsidian 知识库接入**(vault 默认 `D:\work\Obsidian\Obsidian` 可改,白名单读写);视觉定稿默认深色+蓝紫强调、响应式(桌面/手机)、导航图标、实时时钟、每日激励语句;交付决策:维持全栈,单 HTML 版不做(§14 明示理由);表数量 10→15;新增 §17 验收标准。
+
+## 17. 验收标准
+
+1. `npm run dev` 一条命令启动,打开页面所有核心功能立即可用,**预置示例数据**(项目/任务/笔记/对话/模板)。
+2. AI 对话台在配置(或导入)供应商档案后可正常流式对话,**会话内切换模型生效**(消息级记录所用模型与成本)。
+3. 所有数据增删改在页面刷新后保持不变(SQLite 持久化)。
+4. AI 未配置时,对话/分诊给出清晰提示并引导到档案导入/执行器配置。
+5. Chrome / Edge / Safari 及手机浏览器显示正常:桌面侧边栏、手机抽屉导航,卡片流自适应。
+6. script 步骤与快捷指令默认需人工确认,白名单外目录拒绝执行,执行历史可查。
+7. Obsidian 知识库:浏览/搜索/编辑/保存默认 vault 生效,修改 vault 路径后立即切换;vault 外路径访问被拒。
