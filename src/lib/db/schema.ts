@@ -1,3 +1,8 @@
+// 设计决策:
+// 1. 外键/索引:本期不加 REFERENCES 约束 —— SQLite 不支持事后 ADD CONSTRAINT,补外键需要整表重建迁移(已评估、有意推迟);
+//    索引也推迟到查询模式(status/project_id/due_date)明确后,随下一次迁移一并添加。
+// 2. 时间戳:所有时间/到期列统一存 UTC ISO 字符串(toISOString(),如 2026-09-07T00:00:00.000Z);
+//    领域代码依赖其字典序比较,禁止写入带时区偏移的混合格式。
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 
 export const projects = sqliteTable("projects", {

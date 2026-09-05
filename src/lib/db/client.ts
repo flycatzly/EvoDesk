@@ -39,8 +39,13 @@ export function openDb(file: string): Db {
   const db = drizzle(sqlite);
   const migrationsFolder = path.join(process.cwd(), "drizzle");
   if (fs.existsSync(migrationsFolder)) {
-    // 迁移成功后才写缓存:migrate 抛错时单例保持为空,下次 getDb 重试而不是拿到未迁移的库
-    migrate(db, { migrationsFolder });
+    try {
+      // 迁移成功后才写缓存:migrate 抛错时单例保持为空,下次 getDb 重试而不是拿到未迁移的库
+      migrate(db, { migrationsFolder });
+    } catch (err) {
+      sqlite.close(); // 失败即关句柄,避免重试场景下泄漏连接
+      throw err;
+    }
   }
   cacheDb(db);
   return db;
