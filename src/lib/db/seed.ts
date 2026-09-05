@@ -18,8 +18,10 @@ export function seedIfEmpty(db: Db): void {
     || (db.select().from(flowTemplates).all() as unknown[]).length > 0;
   if (has) return;
 
+  // 整体包在事务里:中途失败回滚,避免留下"非空但残缺"的种子数据使幂等守卫永远跳过补种。
+  db.transaction((tx) => {
   // 模板步骤绑定的是角色(executorRole),运行时由执行引擎按角色解析到该角色下已启用的执行器 —— 种子里的模型执行器默认未启用。
-  db.insert(flowTemplates).values([
+  tx.insert(flowTemplates).values([
     T("S 轻量通道", "S", [], [
       { name: "快速执行", type: "llm", executorRole: "executor", prompt: "直接完成任务:{{task.title}}\n{{task.description}}", optional: false },
       { name: "交付确认", type: "checkpoint", instruction: "确认产出满足预期", optional: false },
@@ -45,7 +47,7 @@ export function seedIfEmpty(db: Db): void {
     ]),
   ]).run();
 
-  db.insert(executors).values([
+  tx.insert(executors).values([
     { id: id(), name: "人工", type: "manual", role: "executor", enabled: true, createdAt: now() },
     { id: id(), name: "快速模型", type: "llm", role: "triage", model: "YOUR_FAST_MODEL", apiBase: "https://api.openai.com/v1", protocol: "openai", apiKeyRef: "env:EVODESK_FAST_KEY", enabled: false, createdAt: now() },
     { id: id(), name: "强模型", type: "llm", role: "planner", model: "YOUR_STRONG_MODEL", apiBase: "https://api.openai.com/v1", protocol: "openai", apiKeyRef: "env:EVODESK_STRONG_KEY", enabled: false, createdAt: now() },
@@ -53,19 +55,19 @@ export function seedIfEmpty(db: Db): void {
   ]).run();
 
   const p1 = id(), p2 = id();
-  db.insert(projects).values([
+  tx.insert(projects).values([
     { id: p1, name: "工作台开发", color: "#6366f1", createdAt: now() },
     { id: p2, name: "个人成长", color: "#8b5cf6", createdAt: now() },
   ]).run();
 
-  db.insert(recurringRules).values([
+  tx.insert(recurringRules).values([
     { id: id(), title: "英语学习 30 分钟", tags: '["学习"]', complexity: "S", priority: 1, projectId: p2, freq: "daily", enabled: true, nextRunAt: tomorrow(), createdAt: now() },
     { id: id(), title: "健身 45 分钟", tags: '["健身"]', complexity: "S", priority: 1, projectId: p2, freq: "weekly", weekday: 1, enabled: true, nextRunAt: tomorrow(), createdAt: now() },
   ]).run();
 
   const today = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-  db.insert(tasks).values([
+  tx.insert(tasks).values([
     { id: id(), title: "试用 EvoDesk:把一条任务走完分诊流程", tags: '["事务"]', complexity: "S", status: "inbox", createdAt: now(), updatedAt: now() },
     { id: id(), title: "阅读行业周报并摘要", tags: '["研究"]', complexity: "M", status: "inbox", projectId: p1, createdAt: now(), updatedAt: now() },
     { id: id(), title: "整理 Obsidian 笔记目录", tags: '["事务"]', complexity: "M", status: "ready", dueDate: today, projectId: p1, createdAt: now(), updatedAt: now() },
@@ -73,11 +75,12 @@ export function seedIfEmpty(db: Db): void {
     { id: id(), title: "配置每日站会要点模板", tags: '["事务"]', complexity: "M", status: "done", projectId: p1, createdAt: now(), updatedAt: now() },
   ]).run();
 
-  db.insert(settings).values([
+  tx.insert(settings).values([
     { key: "theme", value: '"dark"' },
     { key: "cost_budget_usd", value: "10" },
     { key: "vault_path", value: '"D:\\\\work\\\\Obsidian\\\\Obsidian"' },
     { key: "known_tags", value: '["写作","研究","事务","开发","生活","学习","健身"]' },
     { key: "waiting_human_timeout_hours", value: "24" },
   ]).run();
+  });
 }
