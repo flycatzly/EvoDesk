@@ -12,6 +12,7 @@
 | **Maka**(本地优先桌面 AI 工作台) | 本地优先、以用户为中心三问、模块克制(5–9 个)、信息可寻性、浅/深主题、侧边栏+卡片流布局 |
 | **Agent-OS**(多模型路由 AI 任务系统) | 模型路由层:统一 OpenAI 兼容接入 DeepSeek / Qwen / MiniMax / GLM / Moonshot / Ollama 等 |
 | **新增需求(用户,2026-09-06)** | 工作台需能操作本地电脑:执行脚本/命令、打开应用与网页、整理文件;配套本地执行安全模型(§10.2) |
+| **Claude Code 多模型启动器发布包(D:\AI\setting\发布包,用户资产,v1.2 并入)** | 供应商档案化配置(*.txt = settings JSON)、候选模型提取(主模型 + opus/sonnet/haiku 档位,`*_NAME` 键仅作显示别名)、临时 settings 生成、多终端多开、坏配置标 x 跳过 |
 
 **一句话定位**:本地优先的个人"数字驾驶舱"——任务从收件箱进来,按"标签 × 复杂度"路由到流程模板,由异构执行器(AI / 人工 / 本地脚本)逐步处理,并能安全地操作本地电脑;执行数据反哺流程进化,越用越顺手。
 
@@ -42,7 +43,7 @@
 - **框架**:Next.js 15(App Router)+ TypeScript
 - **数据**:better-sqlite3 + Drizzle ORM(WAL 模式),数据文件 `data/evodesk.db`
 - **UI**:Tailwind CSS;recharts(统计图);zod(API 与 LLM 结构化输出校验)
-- **LLM**:原生 fetch 实现 OpenAI 兼容 chat completions 客户端(不引 SDK),`api_base` 可配,流式 SSE
+- **LLM**:原生 fetch 实现统一模型客户端,**双协议**——OpenAI 兼容 chat/completions 与 Anthropic 兼容 `{base}/v1/messages`(导入的启动器档案多为 Anthropic 协议端点);不引 SDK,流式 SSE
 - **启动**:`npm run dev` 开发;`npm run build && npm start` 生产(单进程)
 
 分层:
@@ -54,7 +55,7 @@ API 层    Route Handlers:/api/tasks · runs · templates · executors · evolut
 数据层    Drizzle ORM + SQLite(WAL)
 ```
 
-## 5. 数据模型(9 张表)
+## 5. 数据模型(10 张表)
 
 ### 5.1 tasks(任务)
 ```
@@ -115,7 +116,8 @@ id · name(如'快速模型'、'PowerShell 本地执行') · type('llm','manual'
 role('triage','planner','executor','reviewer','evolution')
 -- type = llm 时:
 model?(如 'glm-4-flash'、'deepseek-chat'、'qwen-flash')
-api_base?(OpenAI 兼容端点;Ollama 填 http://localhost:11434/v1)
+provider_profile_id FK?(引用供应商档案;设置后 api_base/key/协议继承档案,protocol 亦可独立指定)
+api_base?(OpenAI 兼容端点;Ollama 填 http://localhost:11434/v1) · protocol?('openai'|'anthropic',默认 openai)
 api_key_ref('env:ZAI_API_KEY' 或 'plain:…')
 cost_per_1k_input · cost_per_1k_output
 -- type = script 时:
@@ -128,25 +130,35 @@ enabled · created_at
 
 统一接入:DeepSeek / Qwen(百炼)/ MiniMax / GLM(Z.ai)/ Moonshot / Ollama 均走 OpenAI 兼容协议,换模型 = 换 `model` + `api_base` 两项配置。
 
-### 5.6 quick_actions + quick_action_runs(快捷指令,操作本地电脑的直达入口)
+### 5.6 provider_profiles(供应商档案 —— 启动器 *.txt 配置的入库形态)
 ```
-quick_actions:  id · name · type('command'|'url') · payload(命令模板或 URL)
+id · name(显示名=文件名,如 'My-Zhipu-GLM-Lite')
+protocol('anthropic'|'openai',启动器导入的档案 = anthropic)
+api_base(如 https://api.z.ai/api/anthropic) · api_key_ref
+candidates JSON([{model:'glm-5.3', alias?:'glm-5.3', tier:'primary'|'opus'|'sonnet'|'haiku'}])
+source('import'|'manual') · import_path? · enabled · created_at
+```
+**候选提取规则**(沿用 launcher `Get-ModelCandidates`):primary = `ANTHROPIC_MODEL`;随后依次 opus/sonnet/haiku(`ANTHROPIC_DEFAULT_*_MODEL`);去重;以 `_NAME` 结尾的键只是显示别名,不进候选。启动器自带段落(hooks/mcpServers/statusLine/extraKnownMarketplaces/enabledPlugins)**不迁移、不执行**,仅 launch 时原样透传进生成的临时 settings(见 §10.3)。
+
+### 5.7 quick_actions + quick_action_runs(快捷指令,操作本地电脑的直达入口)
+```
+quick_actions:  id · name · type('command'|'url'|'launch') · payload(命令模板 / URL / {profile_id, model?, workdir?})
                 shell?(仅 command) · icon? · sort · enabled · created_at
 quick_action_runs: id · action_id FK · rendered_payload · output(截断至 64KB)
                    exit_code? · status('ok','failed','timeout','canceled') · duration_ms · ts
 ```
-快捷指令不走任务流,从仪表盘一键触发;`command` 类型同样过 §10.2 安全门。
+快捷指令不走任务流,从仪表盘一键触发;`command` 类型同样过 §10.2 安全门;`launch` 类型一键启动 Claude Code 终端(见 §10.3)。
 
-### 5.7 evolution_events(进化日志)
+### 5.8 evolution_events(进化日志)
 ```
 id · ts · kind('variant_created','promoted','retired','analysis_run')
 template_id? · related_template_id? · reason · detail(JSON)
 ```
 
-### 5.8 settings(KV)
-JSON value:主题、成本预算、复盘触发阈值、路由默认偏好、**本地执行白名单目录**、**待人工超时阈值**等。
+### 5.9 settings(KV)
+JSON value:主题、成本预算、复盘触发阈值、路由默认偏好、**本地执行白名单目录**、**待人工超时阈值**、**启动器配置目录路径**等。
 
-### 5.9 种子数据
+### 5.10 种子数据(不含任何密钥;供应商档案一律经导入器产生)
 - 模板 3 条:S 轻量通道(快速执行→交付确认,2 步)/ M 标准流程(任务澄清→执行→自检→交付审核)/ L 深度流程(规划→执行→审查→修订→交付审核,可含 manual 步骤)
 - 执行器:人工;快速模型(任一便宜模型,role=triage/executor);强模型(role=planner/reviewer/evolution);**PowerShell 本地执行器(script,auto_approve=false,工作目录默认 `data/sandbox`)**
 - 快捷指令示例:**打开 Z.ai 控制台(url)**、**打开工作目录(command,explorer %WORKSPACE%)**、**打开 EvoDesk 数据文件夹(url)**
@@ -231,12 +243,13 @@ JSON value:主题、成本预算、复盘触发阈值、路由默认偏好、**�
 
 ## 10. 模型路由层与本地执行
 
-### 10.1 模型路由(Agent-OS 式)
+### 10.1 模型路由(Agent-OS 式 + 启动器档案)
 
 - executors 表即模型注册表;role 决定用途(分诊用快模型,规划/审查/复盘用强模型)。
-- OpenAI 兼容统一客户端:DeepSeek / Qwen / MiniMax / GLM / Moonshot / Ollama 换配置即换模型。
+- **双协议统一客户端**:openai(chat/completions)· anthropic(`{base}/v1/messages`,Bearer 鉴权);DeepSeek / Qwen / MiniMax / GLM / Moonshot / Ollama 换配置即换模型;**导入的启动器档案(api.z.ai/api/anthropic、api.deepseek.com/anthropic、api.xiaomimimo.com/anthropic 等)为 Anthropic 协议,可直接作 EvoDesk 自己 llm 步骤的执行器**。
+- **从档案派生执行器**:一档多位——opus 档 → 强模型角色(planner/reviewer/evolution),sonnet 档 → 均衡(executor),haiku 档 → 快速(triage);单价未知可后补,成本统计按 0 处理并标记。
 - 流式 SSE;tokens × 单价实时记成本;预算(settings 成本上限)超限 → 仪表盘风险雷达提示。
-- 密钥:`api_key_ref = 'env:XXX'`(推荐)或 `'plain:…'`(存本地文件,界面提示风险)。
+- 密钥:`api_key_ref = 'env:XXX'`(推荐)或 `'plain:…'`(存本地文件,界面提示风险);档案密钥一律本地存储、界面掩码显示、日志绝不打印。
 
 ### 10.2 本地执行安全模型(script 执行器与快捷指令共用)
 
@@ -250,19 +263,34 @@ JSON value:主题、成本预算、复盘触发阈值、路由默认偏好、**�
 6. **全量留痕**:任务内 script 步骤记 step_runs;快捷指令记 quick_action_runs(命令、输出、退出码、耗时);执行视图可回看历史输出。
 7. **Shell 支持**:powershell(默认,`-NoProfile -Command`)· cmd · bash(Git Bash)· python。
 
+### 10.3 供应商档案与 Claude Code 启动器(v1.2 并入 D:\AI\setting\发布包 的设计)
+
+**导入器**(执行器页/设置页入口):
+- 指定目录(默认记住上次路径)→ 扫描 `*.txt` → JSON 解析 → 提取 `env` 段建 provider_profiles 档案;
+- 缺 `env` 段或 JSON 损坏 → 该文件标"跳过",不影响其余(同 launcher 行为),返回导入报告(成功清单 + 跳过原因);
+- **失效段落治理**:hooks / mcpServers / statusLine / extraKnownMarketplaces / enabledPlugins 指向原作者机器的 evermem 等条目——导入时**不迁移不执行**并逐条提示(即原包使用说明附录的痛点,由工作台自动完成);仅 launch 型快捷指令生成临时 settings 时按用户选择**原样透传或剥离**;
+- 密钥安全:与原包同等警示("拿到包 = 拿到你的额度");密钥仅存本地库,界面掩码(`sk-***`),日志绝不打印;`data/generated/` 临时产物 gitignore、可一键清空。
+
+**launch 型快捷指令(一键启动 Claude Code 终端)**:
+- payload `{profile_id, model?, workdir?}`;一次可编排多个组合多开(复刻 launcher 的多选体验);
+- 执行流程(复用 launcher.ps1 逻辑,迁移为工作台内置能力):重读档案 → 按所选模型覆盖 `env.ANTHROPIC_MODEL` 与顶层 `model` → 生成临时 settings JSON 至 `data/generated/<档案>-<模型>.json`(模型名中 `[]*?<>|/\:` 等字符替换为 `_`)→ `Start-Process claude.cmd --settings <json> [--model <m>]`(失败回退 `cmd /c claude.cmd …`)→ 结果记 quick_action_runs;
+- 启动前过 §10.2 确认门:确认页显示将启动的命令、模型、工作目录与档案名(**不回显完整密钥**);
+- 工作目录默认当前工作区,可选任意存在目录;`claude.cmd` 未安装 → 明确报错提示(npm 安装指引),不影响其他功能;
+- 保留 **DryRun** 能力:仅生成 settings 并返回命令预览,不开窗。
+
 ## 11. UI 设计
 
 **布局**:左侧固定侧边栏(Logo + 导航 + 快速新增按钮)+ 主内容卡片流;遵循 Z 型阅读;配色 ≤4 色 + 1 强调色;重要信息(已延期、待人工)用强调色突出;合理留白。
 
 **视图清单(完整版 7 个,MVP 加粗 5 个)**:
 
-1. **仪表盘**(MVP 简版:核心数据 + 今日清单;M5 加入风险雷达与可复盘提示):核心数据(今日待办/执行中/待人工/本周成本)· 今日清单(已延期/今天截止/即将截止三态,延期置顶)· **快捷操作卡片(快捷指令:一键开网页/开目录/跑常用命令,command 类走确认门)** · 风险雷达(延期任务/待人工超时/成本预算超限/低绩效模板,阈值可配)· 可复盘提示
+1. **仪表盘**(MVP 简版:核心数据 + 今日清单;M5 加入风险雷达与可复盘提示):核心数据(今日待办/执行中/待人工/本周成本)· 今日清单(已延期/今天截止/即将截止三态,延期置顶)· **快捷操作卡片(快捷指令:一键开网页/开目录/跑常用命令/启动 Claude Code 终端,command 与 launch 类走确认门)** · 风险雷达(延期任务/待人工超时/成本预算超限/低绩效模板,阈值可配)· 可复盘提示
 2. **收件箱**(MVP):快速录入 + 分诊队列(一键 LLM 分诊 → 确认标签/复杂度/模板 → 就绪)
 3. **任务看板**(MVP):按状态分列(就绪/执行中/待人工/评审/完成),卡片带标签/复杂度/成本徽章,点卡进执行视图
 4. **任务执行视图**(MVP):左侧步骤时间线(当前步高亮、完成步可展开看产出/成本),右侧当前步骤操作区(AI 流式输出 / 手动输入 / 审核通过-打回 / 重试-手动兜底 / **script:命令预览+确认执行+输出控制台**)
 5. **流程库**(MVP):模板卡片(版本谱系、绩效徽章:成功率/平均成本/耗时、活跃/实验/退役状态)、步骤预览、克隆/退役、进化事件时间线
-6. 执行器管理:模型/人工/**脚本**执行器 CRUD(llm:模型/端点/单价;script:shell/工作目录/超时/自动批准开关;**白名单目录管理**)
-7. 设置:主题切换、成本预算、复盘阈值、密钥配置指引
+6. 执行器管理:模型/人工/**脚本**执行器 CRUD(llm:模型/端点/单价;script:shell/工作目录/超时/自动批准开关;**白名单目录管理**);**供应商档案区:扫描导入、档案列表(候选模型与档位展示)、从档案派生执行器(opus/sonnet/haiku → 强/均衡/快角色)、掩码显示密钥**
+7. 设置:主题切换、成本预算、复盘阈值、密钥配置指引、**启动器配置目录路径、generated 临时目录一键清空**
 
 **全局**:`⌘K` 命令面板(搜任务/页面/新建任务,v1.1);全局快速新增(MVP);浅色/深色/跟随系统(MVP)。
 
@@ -284,24 +312,28 @@ GET/PATCH  /api/templates/[id]           详情 · 编辑/退役/晋升
 POST       /api/evolution/analyze        触发复盘分析
 GET        /api/evolution/events         进化事件时间线
 GET/POST/PATCH /api/quick-actions        快捷指令 CRUD
-POST       /api/quick-actions/[id]/preview    渲染命令 + 风险标记(不执行)
+POST       /api/quick-actions/[id]/preview    渲染命令 / 生成 launch 预览(命令、模型、工作目录;不执行)
 POST       /api/quick-actions/[id]/confirm    确认后真正执行,返回运行记录
 GET        /api/quick-actions/runs       快捷指令执行历史
 GET/POST   /api/executors                执行器 CRUD
 POST       /api/executors/[id]/test      连通性/试运行测试(模型 ping、脚本 echo)
+GET/POST   /api/provider-profiles        供应商档案 CRUD
+POST       /api/provider-profiles/import 扫描目录导入(返回成功/跳过报告)
+POST       /api/provider-profiles/[id]/derive 从档案派生执行器(选档位+角色)
+DELETE     /api/provider-profiles/generated   清空 data/generated 临时目录
 GET        /api/stats                    仪表盘/统计聚合
 GET/PUT    /api/settings                 设置 KV
 ```
 
 ## 13. 测试策略
 
-- **单元(vitest)**:路由器打分与 fallback、进化统计聚合(打回率/成功率/人工接管率)、steps 变更纯函数(remove/add/replace/reorder/edit_prompt)、提示词变量渲染、任务状态机流转合法性
-- **集成**:Route Handlers 对临时 SQLite 库;LLM 用 mock server(流式/失败/重试路径);**script 执行器(超时终止、非零退出码、输出截断、确认门拦截/放行、白名单外目录拒绝、破坏性模式告警)**
+- **单元(vitest)**:路由器打分与 fallback、进化统计聚合(打回率/成功率/人工接管率)、steps 变更纯函数(remove/add/replace/reorder/edit_prompt)、提示词变量渲染、任务状态机流转合法性、**供应商档案解析(缺 env 报错跳过、`_NAME` 别名不进候选、档位提取与去重)、临时 settings 生成(模型覆盖、非法字符替换)、破坏性命令模式匹配**
+- **集成**:Route Handlers 对临时 SQLite 库;LLM 用 mock server(流式/失败/重试路径,含 **anthropic 协议** mock);**script 执行器(超时终止、非零退出码、输出截断、确认门拦截/放行、白名单外目录拒绝)**;**launch DryRun(生成 settings、不开窗)**
 - **冒烟**:创建任务 → 分诊(mock)→ start → 逐步执行(含一次打回、一次手动兜底、一次 script 步骤确认执行)→ 评分完成 全链路 API 测试
 
 ## 14. 范围边界(v1 不做,架构预留)
 
-拖拽看板(dnd-kit)、XL 任务拆子任务、日历视图、IM/邮件消息聚合、多用户与鉴权、桌面打包(Electron/Tauri,v2 可选)、移动端、**定时任务与文件监控(script 的 cron/watch 触发,v2)**、**远程机器控制(仅本机)**、**进程级沙箱隔离**(安全边界为确认门+白名单+留痕,见 §10.2)。
+拖拽看板(dnd-kit)、XL 任务拆子任务、日历视图、IM/邮件消息聚合、多用户与鉴权、桌面打包(Electron/Tauri,v2 可选)、移动端、**定时任务与文件监控(script 的 cron/watch 触发,v2)**、**远程机器控制(仅本机)**、**进程级沙箱隔离**(安全边界为确认门+白名单+留痕,见 §10.2)、**启动器档案中 hooks/plugins/mcpServers 的执行与迁移**(仅 launch 时原样透传或剥离,见 §10.3)、**供应商档案云同步与密钥加密存储**(本地明文,与原包同等安全级别,明示)。
 
 ## 15. 实施里程碑
 
@@ -309,11 +341,12 @@ GET/PUT    /api/settings                 设置 KV
 |---|---|
 | M1 | 项目骨架 + 数据层(Drizzle schema + 迁移)+ 种子数据 + 主题骨架 |
 | M2 | 收件箱 + 分诊(LLM 分诊 + 路由器)+ 任务 CRUD |
-| M3 | 执行引擎(runner、SSE、兜底链)+ 任务执行视图 + 模型路由层 + **script 执行器与安全门** |
-| M4 | 流程库 + 进化引擎(复盘/变体/diff/晋升/淘汰)+ **快捷指令** |
+| M3 | 执行引擎(runner、SSE、兜底链)+ 任务执行视图 + 模型路由层(**双协议客户端 + provider_profiles**)+ script 执行器与安全门 |
+| M4 | 流程库 + 进化引擎(复盘/变体/diff/晋升/淘汰)+ 快捷指令(**含 launch 型:Claude Code 多开、档案导入器、派生执行器**) |
 | M5 | 仪表盘 + 风险雷达 + 统计 + 打磨(空态/加载态/错误态)|
 
 ## 16. 变更记录
 
 - **2026-09-06 v1**:初稿定稿。
-- **2026-09-06 v1.1**:应用户要求新增"操作本地电脑"能力——script 执行器(executors 表扩展 shell/working_dir/timeout/auto_approve)、流程模板新增 script 步骤类型与 awaiting_confirmation 状态、快捷指令模块(quick_actions + quick_action_runs,表数量 7→9)、本地执行安全模型(§10.2:确认门/白名单/资源限制/全量留痕);相应更新执行引擎、UI、API、测试与里程碑。
+- **2026-09-06 v1.1**:应用户要求新增"操作本地电脑"能力——script 执行器(executors 表扩展 shell/working_dir/timeout/auto_approve)、流程模板新增 script 步骤类型与 awaiting_confirmation 状态、快捷指令模块(quick_actions + quick_action_runs)、本地执行安全模型(§10.2:确认门/白名单/资源限制/全量留痕);相应更新执行引擎、UI、API、测试与里程碑。
+- **2026-09-06 v1.2**:审读 `D:\AI\setting\发布包`(Claude Code 多模型启动器)后并入其设计——新增 provider_profiles 供应商档案表(10 张表)、候选模型提取规则(primary+opus/sonnet/haiku,`_NAME` 仅别名)、双协议模型客户端(openai + anthropic,适配 api.z.ai/api/anthropic 等)、从档案派生执行器(档位→角色映射)、quick_actions 新增 launch 型(生成临时 settings 多开 Claude Code 终端,DryRun 支持)、导入器(坏配置跳过、失效段落自动提示)、密钥掩码与留痕;表数量 9→10。
