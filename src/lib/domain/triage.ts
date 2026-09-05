@@ -39,6 +39,7 @@ export async function triageTask(
     const out = await callLlmWithRetry(cfg, buildTriagePrompt(task, knownTags), fetchImpl);
     const parsed = parseTriage(out.text);
     if (parsed) return { result: parsed, degraded: false };
+    console.warn("[triage] 输出无法解析,降级:", out.text.slice(0, 200));
     return { result: FALLBACK_TRIAGE, degraded: true };
   } catch (err) {
     // 降级可观测性(Task 7 评审):静默吞错会让"为什么一直是 fallback"无法排查
