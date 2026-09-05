@@ -26,8 +26,9 @@ describe("routeTemplate", () => {
     const c = t({ id: "c", status: "retired", tags: '["写作"]', statAvgCostUsd: 0 });
     expect(routeTemplate([a, b, c], ["写作"], "M", NOW)?.id).toBe("b");
   });
-  it("无候选返回 null(调用方 fallback)", () => {
+  it("无候选返回 null(调用方 fallback;experimental 不进自动路由,设计 §9)", () => {
     expect(routeTemplate([], [], "M", NOW)).toBeNull();
     expect(routeTemplate([t({ status: "retired" })], [], "M", NOW)).toBeNull();
+    expect(routeTemplate([t({ status: "experimental" })], [], "M", NOW)).toBeNull();
   });
 });

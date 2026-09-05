@@ -1361,7 +1361,7 @@ describe("POST /api/tasks/[id]/triage", () => {
     vi.unstubAllGlobals();
     expect(data.degraded).toBe(false);
     expect(data.task.tags).toEqual(["研究"]);
-    expect(data.task.flow_template_id).toBeTruthy();
+    expect(data.task.flowTemplateId).toBeTruthy();
   });
 });
 ```
@@ -2114,7 +2114,7 @@ export function TriageCard({ task, templates }: { task: Task; templates: Templat
     setForm({
       tags: (data.task.tags ?? []).join(","),
       complexity: data.task.complexity,
-      templateId: data.task.flow_template_id ?? data.matched_template_id ?? "",
+      templateId: data.task.flowTemplateId ?? data.matched_template_id ?? "",
     });
     setNote(data.degraded ? "AI 分诊不可用,已用默认建议,请手动确认。" : `AI 建议:${data.suggestion.reason}`);
     setBusy(false);

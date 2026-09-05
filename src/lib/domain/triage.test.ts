@@ -22,11 +22,17 @@ describe("triageTask", () => {
     expect(r.result.tags).toEqual(["研究"]);
     expect(r.degraded).toBe(false);
   });
-  it("两次失败 → 降级 fallback", async () => {
-    const f = vi.fn().mockResolvedValue(new Response("boom", { status: 500 }));
-    const r = await triageTask({ title: "x", description: "" }, [], cfg, f as typeof fetch);
-    expect(r.degraded).toBe(true);
-    expect(r.result).toEqual(FALLBACK_TRIAGE);
+  it("两次失败 → 降级 fallback(固定恰好重试 1 次)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const f = vi.fn().mockResolvedValue(new Response("boom", { status: 500 }));
+      const r = await triageTask({ title: "x", description: "" }, [], cfg, f as typeof fetch);
+      expect(r.degraded).toBe(true);
+      expect(r.result).toEqual(FALLBACK_TRIAGE);
+      expect(f).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
   });
   it("cfg 为 null(未配模型)→ 直接降级且不调接口", async () => {
     const f = vi.fn();

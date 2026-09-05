@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { tasks } from "@/lib/db/schema";
 import { canTransition, TASK_STATUSES, type TaskStatus } from "@/lib/domain/status";
+import { toApiTask } from "@/lib/api/serialize";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,22 +15,12 @@ const dateRe = /^\d{4}-\d{2}-\d{2}$/;
 const normDate = (v: unknown): string | null =>
   typeof v === "string" && dateRe.test(v) && !Number.isNaN(Date.parse(v)) ? v : null;
 
-// tags 列存 JSON 字符串;对外 API 统一还原为数组(测试契约:tags 以数组返回)。
-// 非数组/损坏数据一律归一为 [],避免下游(如 TriageCard 的 tags.join)拿到字符串崩溃。
-function toApi(row: typeof tasks.$inferSelect) {
-  try {
-    const parsed = JSON.parse(row.tags);
-    return { ...row, tags: Array.isArray(parsed) ? parsed : [] };
-  } catch {
-    return { ...row, tags: [] };
-  }
-}
-
+// tags 列存 JSON 字符串;对外 API 统一还原为 string[](契约见 @/lib/api/serialize,Task 11 评审抽出共享)。
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const row = (await getDb().select().from(tasks).where(eq(tasks.id, id)).all())[0];
   if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
-  return NextResponse.json({ task: toApi(row) });
+  return NextResponse.json({ task: toApiTask(row) });
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
@@ -62,5 +53,5 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   db.update(tasks).set(patch).where(eq(tasks.id, id)).run();
   const updated = db.select().from(tasks).where(eq(tasks.id, id)).all()[0];
-  return NextResponse.json({ task: toApi(updated) });
+  return NextResponse.json({ task: toApiTask(updated) });
 }

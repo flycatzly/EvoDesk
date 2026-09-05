@@ -3,6 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { tasks } from "@/lib/db/schema";
 import { tickRecurring } from "@/lib/domain/recurring";
+import { toApiTask } from "@/lib/api/serialize";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
     ? db.select().from(tasks).where(eq(tasks.status, status)).orderBy(desc(tasks.createdAt)).all()
     : db.select().from(tasks).orderBy(desc(tasks.createdAt)).all();
   const filtered = projectId ? rows.filter((t) => t.projectId === projectId) : rows;
-  return NextResponse.json({ tasks: filtered });
+  return NextResponse.json({ tasks: filtered.map(toApiTask) });
 }
 
 export async function POST(req: NextRequest) {
@@ -47,5 +48,7 @@ export async function POST(req: NextRequest) {
     updatedAt: nowIso,
   };
   db.insert(tasks).values(task).run();
-  return NextResponse.json({ task }, { status: 201 });
+  // 回读补全 DB 默认列(flowTemplateId 等)并统一 tags 数组契约(与 PATCH / [id] 的回读模式一致)
+  const created = db.select().from(tasks).where(eq(tasks.id, task.id)).all()[0];
+  return NextResponse.json({ task: toApiTask(created) }, { status: 201 });
 }
