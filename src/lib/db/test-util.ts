@@ -9,6 +9,7 @@ export type Db = BetterSQLite3Database<Record<string, never>>;
 export function createTestDb(): Db {
   const sqlite = new Database(":memory:");
   sqlite.pragma("journal_mode = MEMORY");
+  sqlite.pragma("foreign_keys = ON"); // 与生产 openDb 保持一致
   const db = drizzle(sqlite);
   const migrationsFolder = path.join(process.cwd(), "drizzle");
   if (fs.existsSync(migrationsFolder)) {
