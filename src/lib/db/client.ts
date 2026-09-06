@@ -4,6 +4,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import fs from "node:fs";
 import path from "node:path";
 import type { Db } from "./test-util";
+import { seedIfEmpty } from "./seed";
 
 let instance: Db | null = null;
 
@@ -46,6 +47,12 @@ export function openDb(file: string): Db {
       sqlite.close(); // 失败即关句柄,避免重试场景下泄漏连接
       throw err;
     }
+  }
+  // 迁移成功后补种示例数据(幂等,仅空库生效);种子失败只警告不阻断,空库仍可正常使用
+  try {
+    seedIfEmpty(db);
+  } catch (err) {
+    console.warn("[db] 种子数据写入失败,跳过:", err);
   }
   cacheDb(db);
   return db;

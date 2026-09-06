@@ -1,8 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import Database from "better-sqlite3";
 import { createTestDb } from "./test-util";
-import { getDb, __setDbForTests } from "./client";
+import { getDb, openDb, __setDbForTests } from "./client";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 // 透传 spy:默认行为与真实 migrate 完全一致,仅用于模拟迁移失败与计数
 vi.mock("drizzle-orm/better-sqlite3/migrator", async (importOriginal) => {
@@ -52,6 +55,21 @@ describe("db client", () => {
     } finally {
       vi.unstubAllEnvs();
       __setDbForTests(null);
+    }
+  });
+  it("openDb 在全新库上自动写入种子数据(tasks ≥ 5)", () => {
+    __setDbForTests(null); // openDb 成功后会缓存实例,先清空避免污染后续用例
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "evodesk-seed-"));
+    let db: ReturnType<typeof openDb> | null = null;
+    try {
+      db = openDb(path.join(dir, "seed.db"));
+      const rows = db.all("select id from tasks") as { id: string }[];
+      expect(rows.length).toBeGreaterThanOrEqual(5);
+    } finally {
+      // 关闭底层 sqlite 句柄再删临时目录(Windows 下打开中的文件无法删除)
+      (db as unknown as { $client?: { close(): void } } | null)?.$client?.close();
+      __setDbForTests(null);
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
   it("migrate 失败不污染单例:关闭句柄,下次 getDb 会重试", () => {
