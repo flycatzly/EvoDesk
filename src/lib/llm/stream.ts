@@ -8,6 +8,7 @@ function sseDataLines(buffer: string): string[] {
   });
 }
 
+/** 逐 delta yield 文本;生成器 return 值为聚合 LlmResult。消费者若提前退出必须 await it.return() 释放底层 reader(Task 11/16 遵约)。 */
 export async function* streamLlm(
   cfg: LlmConfig, messages: LlmMessage[], fetchImpl: typeof fetch = fetch,
 ): AsyncGenerator<string, LlmResult, void> {
@@ -30,7 +31,7 @@ export async function* streamLlm(
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    const blocks = buffer.split("\n\n");
+    const blocks = buffer.split(/\r?\n\r?\n/);
     buffer = blocks.pop() ?? "";
     for (const data of sseDataLines(blocks.join("\n\n"))) {
       if (data === "[DONE]") continue;
@@ -38,10 +39,12 @@ export async function* streamLlm(
       try { evt = JSON.parse(data); } catch { continue; }
       if (cfg.protocol === "anthropic") {
         const type = evt.type as string;
+        if (type === "error") throw new Error(`anthropic stream error: ${JSON.stringify(evt).slice(0, 300)}`);
         if (type === "message_start") { tokensIn = (evt as { message?: { usage?: { input_tokens?: number } } }).message?.usage?.input_tokens ?? 0; model = (evt as { message?: { model?: string } }).message?.model ?? model; }
         else if (type === "content_block_delta") { const t = (evt as { delta?: { text?: string } }).delta?.text ?? ""; if (t) { text += t; yield t; } }
         else if (type === "message_delta") { tokensOut = (evt as { usage?: { output_tokens?: number } }).usage?.output_tokens ?? tokensOut; }
       } else {
+        if ((evt as { error?: unknown }).error) throw new Error(`openai stream error: ${JSON.stringify(evt).slice(0, 300)}`);
         const choices = (evt as { choices?: { delta?: { content?: string } }[] }).choices;
         const usage = (evt as { usage?: { prompt_tokens?: number; completion_tokens?: number } }).usage;
         if (usage) { tokensIn = usage.prompt_tokens ?? tokensIn; tokensOut = usage.completion_tokens ?? tokensOut; }
@@ -51,5 +54,6 @@ export async function* streamLlm(
       }
     }
   }
+  if (!text && tokensOut === 0 && tokensIn === 0) throw new Error("流式响应为空(可能非 SSE 端点或全部被过滤)");
   return { text, tokensIn, tokensOut, model };
 }

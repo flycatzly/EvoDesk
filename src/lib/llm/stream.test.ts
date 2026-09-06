@@ -55,4 +55,56 @@ describe("streamLlm", () => {
     const it = streamLlm({ model: "m", apiBase: "https://x", protocol: "openai", apiKey: "k" }, [{ role: "user", content: "hi" }], f as typeof fetch);
     await expect(it.next()).rejects.toThrow(/500/);
   });
+  it("anthropic 中途 event: error → 抛错(不静默截断成功)", async () => {
+    const f = vi.fn().mockResolvedValue(sseResponse([
+      'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Par"}}\n\n',
+      'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n\n',
+    ]));
+    const it = streamLlm({ model: "m2", apiBase: "https://y/api/anthropic", protocol: "anthropic", apiKey: "k" }, [{ role: "user", content: "hi" }], f as typeof fetch);
+    expect((await it.next()).value).toBe("Par");
+    await expect(it.next()).rejects.toThrow(/anthropic stream error/);
+  });
+  it("openai 中途 error 块 → 抛错(不静默截断成功)", async () => {
+    const f = vi.fn().mockResolvedValue(sseResponse([
+      'data: {"choices":[{"delta":{"content":"Par"}}]}\n\n',
+      'data: {"error":{"message":"boom","type":"server_error"}}\n\n',
+    ]));
+    const it = streamLlm({ model: "m", apiBase: "https://x/v1", protocol: "openai", apiKey: "k" }, [{ role: "user", content: "hi" }], f as typeof fetch);
+    expect((await it.next()).value).toBe("Par");
+    await expect(it.next()).rejects.toThrow(/openai stream error/);
+  });
+  it("CRLF 分隔的完整流可正常解析", async () => {
+    const f = vi.fn().mockResolvedValue(sseResponse([
+      'data: {"choices":[{"delta":{"content":"Hi"}}]}\r\n\r\n',
+      'data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1}}\r\n\r\n',
+      "data: [DONE]\r\n\r\n",
+    ]));
+    const it = streamLlm({ model: "m", apiBase: "https://x/v1", protocol: "openai", apiKey: "k" }, [{ role: "user", content: "hi" }], f as typeof fetch);
+    const parts: string[] = [];
+    let final;
+    for (;;) {
+      const r = await it.next();
+      if (r.done) { final = r.value; break; }
+      parts.push(r.value);
+    }
+    expect(parts.join("")).toBe("Hi");
+    expect(final).toMatchObject({ text: "Hi", tokensIn: 3, tokensOut: 1 });
+  });
+  it("单个 SSE 事件 JSON 跨 chunk 边界拆分仍可解析", async () => {
+    const f = vi.fn().mockResolvedValue(sseResponse([
+      'data: {"choices":[{"del',
+      'ta":{"content":"Split"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"!"}}]}\n\n',
+    ]));
+    const it = streamLlm({ model: "m", apiBase: "https://x/v1", protocol: "openai", apiKey: "k" }, [{ role: "user", content: "hi" }], f as typeof fetch);
+    const parts: string[] = [];
+    let final;
+    for (;;) {
+      const r = await it.next();
+      if (r.done) { final = r.value; break; }
+      parts.push(r.value);
+    }
+    expect(parts.join("")).toBe("Split!");
+    expect(final).toMatchObject({ text: "Split!" });
+  });
 });
