@@ -16,9 +16,10 @@ export default function Dashboard() {
   const projectRows = db.select().from(projects).all() as (typeof projects.$inferSelect)[];
   const projectName = (id: string | null) => projectRows.find((p) => p.id === id)?.name;
   const active = allTasks.filter((t) => !["done", "archived", "canceled"].includes(t.status));
-  const overdue = active.filter((t) => t.dueDate && t.dueDate < today());
+  // ISO 字符串字典序即日期序:延期与即将截止都按到期日升序(最旧的在前)
+  const overdue = active.filter((t) => t.dueDate && t.dueDate < today()).sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1));
   const dueToday = active.filter((t) => t.dueDate === today());
-  const upcoming = active.filter((t) => t.dueDate && t.dueDate > today()).slice(0, 5);
+  const upcoming = active.filter((t) => t.dueDate && t.dueDate > today()).sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1)).slice(0, 5);
   const counters = [
     { label: "今日待办", value: dueToday.length + overdue.length },
     { label: "执行中", value: allTasks.filter((t) => t.status === "running").length },

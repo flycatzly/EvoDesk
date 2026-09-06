@@ -13,7 +13,7 @@ const COMPLEXITY_COLOR: Record<string, string> = { S: "var(--ok)", M: "var(--war
 function parseTags(raw: string): string[] {
   try {
     const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as string[]) : [];
+    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === "string") : [];
   } catch {
     return [];
   }
