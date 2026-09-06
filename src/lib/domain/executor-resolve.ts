@@ -12,6 +12,7 @@ export interface ResolvedExecutor {
   shell: string | null; workingDir: string | null; timeoutMs: number; autoApprove: boolean;
 }
 
+/** 角色精确匹配优先;否则回退 executor 角色的启用执行器(调用方可比较 resolved.role !== role 检测降级);无则 null。 */
 export function resolveStepExecutor(db: Db, role: string): ResolvedExecutor | null {
   const all = db.select().from(executors).all() as unknown as ResolvedExecutor[];
   const enabled = all.filter((e) => e.type === "llm" && e.enabled);
