@@ -17,8 +17,9 @@ describe("task status machine", () => {
   it("canceled 可回 inbox(重新打开)", () => {
     expect(canTransition("canceled", "inbox")).toBe(true);
   });
-  it("review → done 合法,running → review 非法(须经 waiting_human 之外路径允许取消)", () => {
+  it("review → done 合法,running → review 合法(runner 完成聚合驱动,规格 §6),archived 终态", () => {
     expect(canTransition("review", "done")).toBe(true);
-    expect(canTransition("running", "review")).toBe(false);
+    expect(canTransition("running", "review")).toBe(true);
+    expect(canTransition("archived", "done")).toBe(false);
   });
 });

@@ -8,7 +8,8 @@ const ALLOWED: Record<TaskStatus, TaskStatus[]> = {
   inbox: ["triaging", "ready", "canceled"],
   triaging: ["ready", "inbox", "canceled"],
   ready: ["running", "inbox", "canceled"],
-  running: ["waiting_human", "ready", "canceled"],
+  // review 由 Plan 2 runner 完成聚合驱动(规格 §6);手动流转仍走 waiting_human
+  running: ["waiting_human", "review", "ready", "canceled"],
   waiting_human: ["running", "review", "ready", "canceled"],
   review: ["done", "running", "canceled"],
   done: ["archived"],
