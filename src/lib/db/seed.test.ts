@@ -22,4 +22,15 @@ describe("seedIfEmpty", () => {
     expect(ex.filter((e) => e.type === "manual").length).toBe(1);
     expect(ex.filter((e) => e.type === "llm" && !e.enabled).length).toBe(2);
   });
+  it("部分冲突收敛:settings 已有键时种子成功,保留已有值并补齐缺失键(回归:UNIQUE constraint failed: settings.key)", () => {
+    const db = createTestDb();
+    db.insert(settings).values({ key: "cost_budget_usd", value: "25" }).run();
+    expect(() => seedIfEmpty(db)).not.toThrow();
+    expect((db.select().from(tasks).all() as unknown[]).length).toBe(5);
+    const kv: Record<string, string> = {};
+    for (const r of db.select().from(settings).all() as { key: string; value: string }[]) kv[r.key] = r.value;
+    expect(kv.cost_budget_usd).toBe("25"); // 用户已改的值保留,不被种子覆盖
+    expect(kv.theme).toBe('"dark"'); // 缺失键照常补齐(原始 JSON 文本形式)
+    expect(Object.keys(kv).length).toBe(5);
+  });
 });

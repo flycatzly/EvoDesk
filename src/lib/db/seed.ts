@@ -75,12 +75,14 @@ export function seedIfEmpty(db: Db): void {
     { id: id(), title: "配置每日站会要点模板", tags: '["事务"]', complexity: "M", status: "done", projectId: p1, createdAt: now(), updatedAt: now() },
   ]).run();
 
+  // settings 是唯一有固定主键的种子表:库可能处于"内容为空但 settings 已有键"的部分状态
+  // (如旧版冒烟或用户改过设置),冲突忽略让种子收敛——已有键保留用户值,缺失键补齐。
   tx.insert(settings).values([
     { key: "theme", value: '"dark"' },
     { key: "cost_budget_usd", value: "10" },
     { key: "vault_path", value: '"D:\\\\work\\\\Obsidian\\\\Obsidian"' },
     { key: "known_tags", value: '["写作","研究","事务","开发","生活","学习","健身"]' },
     { key: "waiting_human_timeout_hours", value: "24" },
-  ]).run();
+  ]).onConflictDoNothing().run();
   });
 }
