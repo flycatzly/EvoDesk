@@ -93,3 +93,74 @@ export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(), // JSON
 });
+
+export const flowRuns = sqliteTable("flow_runs", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id").notNull(),
+  templateId: text("template_id").notNull(),
+  templateVersion: integer("template_version").notNull().default(1),
+  status: text("status").notNull().default("running"), // running|waiting_human|done|failed|canceled(review 是任务态)
+  startedAt: text("started_at").notNull(),
+  finishedAt: text("finished_at"),
+  totalCostUsd: real("total_cost_usd").notNull().default(0),
+  totalDurationMs: integer("total_duration_ms").notNull().default(0),
+  satisfaction: integer("satisfaction"),
+  outcomeNote: text("outcome_note"),
+});
+
+export const stepRuns = sqliteTable("step_runs", {
+  id: text("id").primaryKey(),
+  runId: text("run_id").notNull(),
+  stepIndex: integer("step_index").notNull(),
+  stepName: text("step_name").notNull(),
+  executorType: text("executor_type").notNull(), // llm|manual|checkpoint|script
+  model: text("model"),
+  status: text("status").notNull().default("pending"), // pending|awaiting_confirmation|running|done|skipped|failed
+  input: text("input"),
+  output: text("output"),
+  error: text("error"),
+  costUsd: real("cost_usd").notNull().default(0),
+  tokensIn: integer("tokens_in").notNull().default(0),
+  tokensOut: integer("tokens_out").notNull().default(0),
+  durationMs: integer("duration_ms").notNull().default(0),
+  attempt: integer("attempt").notNull().default(1),
+  rejected: integer("rejected").notNull().default(0),
+  feedback: text("feedback"),
+  feedbackNote: text("feedback_note"),
+  startedAt: text("started_at"),
+  finishedAt: text("finished_at"),
+});
+
+export const providerProfiles = sqliteTable("provider_profiles", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  protocol: text("protocol").notNull().default("anthropic"), // anthropic|openai
+  apiBase: text("api_base").notNull(),
+  apiKeyRef: text("api_key_ref").notNull(),
+  candidates: text("candidates").notNull().default("[]"), // [{model, alias, tier}]
+  source: text("source").notNull().default("import"), // import|manual
+  importPath: text("import_path"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull(),
+});
+
+export const chats = sqliteTable("chats", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  defaultExecutorId: text("default_executor_id"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const chatMessages = sqliteTable("chat_messages", {
+  id: text("id").primaryKey(),
+  chatId: text("chat_id").notNull(),
+  role: text("role").notNull(), // user|assistant
+  content: text("content").notNull(),
+  executorId: text("executor_id"),
+  model: text("model"),
+  tokensIn: integer("tokens_in").notNull().default(0),
+  tokensOut: integer("tokens_out").notNull().default(0),
+  costUsd: real("cost_usd").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+});
