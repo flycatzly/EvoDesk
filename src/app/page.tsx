@@ -1,69 +1,73 @@
-import Image from "next/image";
+import { getDb } from "@/lib/db/client";
+import { tasks, projects } from "@/lib/db/schema";
+import { tickRecurring } from "@/lib/domain/recurring";
+import { TaskCard } from "@/components/TaskCard";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export default function Dashboard() {
+  const db = getDb();
+  tickRecurring(db);
+  const allTasks = db.select().from(tasks).all() as (typeof tasks.$inferSelect)[];
+  const projectRows = db.select().from(projects).all() as (typeof projects.$inferSelect)[];
+  const projectName = (id: string | null) => projectRows.find((p) => p.id === id)?.name;
+  const active = allTasks.filter((t) => !["done", "archived", "canceled"].includes(t.status));
+  const overdue = active.filter((t) => t.dueDate && t.dueDate < today());
+  const dueToday = active.filter((t) => t.dueDate === today());
+  const upcoming = active.filter((t) => t.dueDate && t.dueDate > today()).slice(0, 5);
+  const counters = [
+    { label: "今日待办", value: dueToday.length + overdue.length },
+    { label: "执行中", value: allTasks.filter((t) => t.status === "running").length },
+    { label: "待人工", value: allTasks.filter((t) => t.status === "waiting_human").length },
+    { label: "收件箱", value: allTasks.filter((t) => t.status === "inbox").length },
+  ];
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div className="max-w-5xl">
+      <h1 className="text-xl font-bold mb-4">仪表盘</h1>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        {counters.map((c) => (
+          <div key={c.label} className="surface p-4">
+            <div className="text-2xl font-bold">{c.value}</div>
+            <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>{c.label}</div>
+          </div>
+        ))}
+      </div>
+      <div className="grid md:grid-cols-2 gap-6">
+        <section>
+          <h2 className="font-semibold mb-2">今日清单(含延期置顶)</h2>
+          {[...overdue, ...dueToday].length === 0
+            ? <div className="surface p-4 text-sm" style={{ color: "var(--muted)" }}>今天没有截止任务,安排点小事或休息。</div>
+            : [...overdue, ...dueToday].map((t) => <TaskCard key={t.id} task={t} projectName={projectName(t.projectId)} />)}
+        </section>
+        <section>
+          <h2 className="font-semibold mb-2">项目进度</h2>
+          {projectRows.map((p) => {
+            const pt = allTasks.filter((t) => t.projectId === p.id);
+            const done = pt.filter((t) => ["done", "archived"].includes(t.status)).length;
+            const pct = pt.length === 0 ? 0 : Math.round((done / pt.length) * 100);
+            return (
+              <div key={p.id} className="surface p-3 mb-2">
+                <div className="flex justify-between text-sm mb-1">
+                  <span>{p.name}</span>
+                  <span style={{ color: "var(--muted)" }}>{done}/{pt.length} · {pct}%</span>
+                </div>
+                <div className="h-2 rounded" style={{ background: "var(--surface-2)" }}>
+                  <div className="h-2 rounded" style={{ width: `${pct}%`, background: `linear-gradient(90deg, var(--accent), var(--accent-2))` }} />
+                </div>
+              </div>
+            );
+          })}
+          <h2 className="font-semibold mb-2 mt-4">即将截止</h2>
+          {upcoming.length === 0
+            ? <div className="surface p-4 text-sm" style={{ color: "var(--muted)" }}>暂无</div>
+            : upcoming.map((t) => <TaskCard key={t.id} task={t} projectName={projectName(t.projectId)} />)}
+        </section>
+      </div>
     </div>
   );
 }
