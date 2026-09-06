@@ -14,9 +14,13 @@ export function ProjectFilter({ projects, current }: { projects: { id: string; n
 export function StatusButton({ taskId, to, label }: { taskId: string; to: string; label: string }) {
   const router = useRouter();
   const go = async () => {
-    const res = await fetch(`/api/tasks/${taskId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: to }) });
-    if (!res.ok) return; // 失败(含非法流转 422)不刷新,卡片停留原列,可重试
-    router.refresh();
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: to }) });
+      if (!res.ok) return; // 失败(含非法流转 422)不刷新,卡片停留原列,可重试
+      router.refresh();
+    } catch {
+      // 网络失败:保持现状,静默重试由用户发起
+    }
   };
   return <button onClick={go} className="ghost-btn px-2 py-1 text-xs">{label}</button>;
 }

@@ -17,7 +17,10 @@ export function TriageCard({ task, templates }: { task: Task; templates: Templat
     setBusy(true);
     try {
       const res = await fetch(`/api/tasks/${task.id}/triage`, { method: "POST" });
-      if (!res.ok) return;
+      if (!res.ok) {
+        setNote("分诊失败,请重试");
+        return;
+      }
       const data = await res.json().catch(() => null);
       if (!data?.task || !data?.suggestion) return;
       setForm({
@@ -25,8 +28,10 @@ export function TriageCard({ task, templates }: { task: Task; templates: Templat
         complexity: data.task.complexity,
         templateId: data.task.flowTemplateId ?? data.matched_template_id ?? "",
       });
-      setNote(data.degraded ? "AI 分诊不可用,已用默认建议,请手动确认。" : `AI 建议:${data.suggestion.reason}`);
+      setNote(data.degraded ? "AI 分诊不可用,已用默认建议,请手动确认。配置模型见 README「接入 AI」。" : `AI 建议:${data.suggestion.reason}`);
       router.refresh();
+    } catch {
+      setNote("分诊失败,请重试");
     } finally {
       setBusy(false);
     }
@@ -45,10 +50,15 @@ export function TriageCard({ task, templates }: { task: Task; templates: Templat
           status: "ready",
         }),
       });
-      if (!res.ok) return; // 失败(含并发流转 422)保留表单与提示,用户可重试或手动核对
+      if (!res.ok) {
+        setNote("保存失败,请重试"); // 失败(含并发流转 422)保留表单与提示,用户可重试或手动核对
+        return;
+      }
       setForm(null);
       setNote(null);
       router.refresh();
+    } catch {
+      setNote("保存失败,请重试");
     } finally {
       setBusy(false);
     }

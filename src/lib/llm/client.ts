@@ -13,10 +13,12 @@ export async function callLlm(cfg: LlmConfig, messages: LlmMessage[], fetchImpl:
   if (cfg.protocol === "anthropic") {
     const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n") || undefined;
     const rest = messages.filter((m) => m.role !== "system");
+    // 30s 兜底超时防止单次请求挂死;按执行器 timeoutMs 的精细接线属 Plan 2。
     const res = await fetchImpl(`${cfg.apiBase}/v1/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${cfg.apiKey}`, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({ model: cfg.model, max_tokens: 4096, system, messages: rest }),
+      signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) throw new Error(`anthropic ${res.status}: ${await res.text()}`);
     const data = await res.json();
@@ -26,6 +28,7 @@ export async function callLlm(cfg: LlmConfig, messages: LlmMessage[], fetchImpl:
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${cfg.apiKey}` },
     body: JSON.stringify({ model: cfg.model, messages }),
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`openai ${res.status}: ${await res.text()}`);
   const data = await res.json();
