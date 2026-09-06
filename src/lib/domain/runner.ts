@@ -3,6 +3,8 @@ import type { Db } from "@/lib/db/test-util";
 import { flowRuns, stepRuns, tasks, flowTemplates } from "@/lib/db/schema";
 import { canTransition, type TaskStatus } from "@/lib/domain/status";
 import { getStepDefs, type StepDef } from "@/lib/domain/step-def";
+import { executorLlmConfig, callLlmWithRetry } from "@/lib/llm/client";
+import { resolveStepExecutor, renderPrompt, type ResolvedExecutor } from "@/lib/domain/executor-resolve";
 import { refreshTemplateStats } from "@/lib/domain/template-stats";
 
 export class RunError extends Error {
@@ -57,6 +59,7 @@ export function syncRunStatus(db: Db, runId: string): void {
   if (!cur) {
     const steps = getSteps(db, runId);
     const totalCost = steps.reduce((a, s) => a + s.costUsd, 0);
+    // 墙钟周期(含人工等待)——进化对比关注端到端时长,勿改为 sum(step.durationMs)
     const totalDuration = Date.now() - new Date(run.startedAt).getTime();
     db.update(flowRuns).set({ status: "done", finishedAt: nowIso, totalCostUsd: totalCost, totalDurationMs: totalDuration }).where(eq(flowRuns.id, runId)).run();
     const task = db.select().from(tasks).where(eq(tasks.id, run.taskId)).all()[0] as typeof tasks.$inferSelect | undefined;
@@ -72,4 +75,90 @@ export function syncRunStatus(db: Db, runId: string): void {
   if (task && task.status !== runStatus && canTransition(task.status as TaskStatus, runStatus as TaskStatus)) {
     db.update(tasks).set({ status: runStatus, updatedAt: nowIso }).where(eq(tasks.id, task.id)).run();
   }
+}
+
+function setStep(db: Db, stepId: string, patch: Partial<typeof stepRuns.$inferInsert>) {
+  db.update(stepRuns).set(patch).where(eq(stepRuns.id, stepId)).run();
+  return db.select().from(stepRuns).where(eq(stepRuns.id, stepId)).all()[0] as typeof stepRuns.$inferSelect;
+}
+function stepCost(ex: ResolvedExecutor, tokensIn: number, tokensOut: number): number {
+  return (tokensIn / 1000) * ex.costPer1kInput + (tokensOut / 1000) * ex.costPer1kOutput;
+}
+function prevOutput(db: Db, runId: string, stepIndex: number): string {
+  const prev = getSteps(db, runId).filter((s) => s.stepIndex < stepIndex).at(-1);
+  return prev?.output ?? "";
+}
+function requireCurrent(db: Db, runId: string, stepIndex: number) {
+  const cur = getCurrentStep(db, runId);
+  if (!cur || cur.stepIndex !== stepIndex) throw new RunError("该步骤不是当前步骤", 409);
+  return cur;
+}
+
+export async function runLlmStep(db: Db, runId: string, stepIndex: number, fetchImpl?: typeof fetch) {
+  const cur = requireCurrent(db, runId, stepIndex);
+  if (cur.executorType !== "llm" || cur.status !== "pending") throw new RunError("当前步骤不可执行 LLM");
+  const run = getRun(db, runId)!;
+  const def = getStepDefsForRun(db, runId)[stepIndex];
+  const task = db.select().from(tasks).where(eq(tasks.id, run.taskId)).all()[0] as typeof tasks.$inferSelect;
+  const ex = resolveStepExecutor(db, def.executorRole ?? "executor");
+  const nowIso = new Date().toISOString();
+  if (!ex) {
+    const s = setStep(db, cur.id, { status: "failed", error: `无可用的 ${def.executorRole ?? "executor"} 执行器,可在执行器页启用或改用人工填写`, startedAt: nowIso, finishedAt: nowIso });
+    syncRunStatus(db, runId);
+    return s;
+  }
+  let cfg;
+  try { cfg = executorLlmConfig(ex); } catch (e) {
+    const s = setStep(db, cur.id, { status: "failed", error: String(e), startedAt: nowIso, finishedAt: nowIso });
+    syncRunStatus(db, runId);
+    return s;
+  }
+  const prompt = renderPrompt(def.prompt ?? "", { task: { title: task.title, description: task.description }, prevOutput: prevOutput(db, runId, stepIndex) });
+  setStep(db, cur.id, { status: "running", input: prompt, model: ex.model, startedAt: nowIso });
+  const started = Date.now();
+  try {
+    const r = await callLlmWithRetry(cfg, [{ role: "user", content: prompt }], fetchImpl);
+    const s = setStep(db, cur.id, {
+      status: "done", output: r.text, model: r.model,
+      tokensIn: r.tokensIn, tokensOut: r.tokensOut,
+      costUsd: stepCost(ex, r.tokensIn, r.tokensOut),
+      durationMs: Date.now() - started, finishedAt: new Date().toISOString(),
+    });
+    syncRunStatus(db, runId);
+    return s;
+  } catch (e) {
+    const s = setStep(db, cur.id, { status: "failed", error: String(e).slice(0, 500), finishedAt: new Date().toISOString(), durationMs: Date.now() - started });
+    syncRunStatus(db, runId);
+    return s;
+  }
+}
+
+export function retryStep(db: Db, runId: string, stepIndex: number) {
+  const cur = requireCurrent(db, runId, stepIndex);
+  if (cur.status !== "failed" || !["llm", "script"].includes(cur.executorType)) throw new RunError("仅失败的 llm/script 步骤可重试");
+  const s = setStep(db, cur.id, { status: "pending", attempt: cur.attempt + 1, error: null });
+  syncRunStatus(db, runId);
+  return s;
+}
+export function manualOverrideStep(db: Db, runId: string, stepIndex: number, output: string) {
+  const cur = requireCurrent(db, runId, stepIndex);
+  if (cur.status !== "failed" && !(cur.executorType === "llm" && cur.status === "pending")) throw new RunError("该步骤不可人工接管");
+  const s = setStep(db, cur.id, { status: "done", output, feedbackNote: "manual_override", finishedAt: new Date().toISOString() });
+  syncRunStatus(db, runId);
+  return s;
+}
+export function skipStep(db: Db, runId: string, stepIndex: number) {
+  // getStepDefsForRun 对不存在的 run 抛 404,无需单独 getRun 校验
+  const def = getStepDefsForRun(db, runId)[stepIndex];
+  const cur = requireCurrent(db, runId, stepIndex);
+  if (!def.optional || cur.status !== "pending") throw new RunError("仅当前 pending 的 optional 步骤可跳过");
+  const s = setStep(db, cur.id, { status: "skipped", finishedAt: new Date().toISOString() });
+  syncRunStatus(db, runId);
+  return s;
+}
+export function markStepFailed(db: Db, runId: string, stepIndex: number, error: string) {
+  const cur = getCurrentStep(db, runId);
+  const s = setStep(db, cur!.id, { status: "failed", error: error.slice(0, 500), finishedAt: new Date().toISOString() });
+  syncRunStatus(db, runId);
+  return s;
 }

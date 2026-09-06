@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createTestDb } from "@/lib/db/test-util";
 import { seedIfEmpty } from "@/lib/db/seed";
-import { startRun, getCurrentStep, syncRunStatus, RunError } from "./runner";
-import { tasks, flowRuns, stepRuns, flowTemplates } from "@/lib/db/schema";
+import { startRun, getCurrentStep, syncRunStatus, RunError, runLlmStep, retryStep, manualOverrideStep, skipStep } from "./runner";
+import { tasks, flowRuns, stepRuns, flowTemplates, executors } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 let db: ReturnType<typeof createTestDb>;
@@ -68,5 +68,72 @@ describe("getCurrentStep/syncRunStatus", () => {
     syncRunStatus(db, runId);
     expect((db.select().from(flowRuns).where(eq(flowRuns.id, runId)).all()[0] as typeof flowRuns.$inferSelect).status).toBe("waiting_human");
     expect((db.select().from(tasks).where(eq(tasks.id, readyTaskId)).all()[0] as typeof tasks.$inferSelect).status).toBe("waiting_human");
+  });
+});
+
+describe("syncRunStatus 契约", () => {
+  it("不存在的 runId → 不抛出(GET 路由依赖此行为)", () => {
+    expect(() => syncRunStatus(db, "no-such-run")).not.toThrow();
+  });
+  it("终态 run → no-op(轮询依赖)", () => {
+    const { runId } = startRun(db, readyTaskId);
+    db.update(flowRuns).set({ status: "canceled" }).where(eq(flowRuns.id, runId)).run();
+    const before = db.select().from(flowRuns).where(eq(flowRuns.id, runId)).all()[0];
+    syncRunStatus(db, runId);
+    expect(db.select().from(flowRuns).where(eq(flowRuns.id, runId)).all()[0]).toEqual(before);
+  });
+});
+
+describe("runLlmStep", () => {
+  it("成功:渲染提示词、持久化产出与成本,状态 done", async () => {
+    db.update(executors).set({ enabled: true, role: "executor" }).where(eq(executors.name, "快速模型")).run();
+    const { runId } = startRun(db, readyTaskId);
+    const f = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: "产出OK" } }], usage: { prompt_tokens: 10, completion_tokens: 4 }, model: "m" }), { status: 200 }));
+    const step = await runLlmStep(db, runId, 0, f as typeof fetch); // S 通道第 0 步 executorRole=executor
+    expect(step.status).toBe("done");
+    expect(step.output).toBe("产出OK");
+    expect(step.tokensIn).toBe(10);
+  });
+  it("无可用执行器 → 步骤 failed 且错误可读", async () => {
+    const { runId } = startRun(db, readyTaskId); // 种子执行器默认禁用
+    const step = await runLlmStep(db, runId, 0, undefined as unknown as typeof fetch);
+    expect(step.status).toBe("failed");
+    expect(step.error).toContain("无可用");
+  });
+  it("LLM 失败 → 步骤 failed,run 转等待人工", async () => {
+    db.update(executors).set({ enabled: true }).where(eq(executors.name, "快速模型")).run();
+    db.update(executors).set({ role: "executor" }).where(eq(executors.name, "快速模型")).run();
+    const { runId } = startRun(db, readyTaskId);
+    const f = vi.fn().mockResolvedValue(new Response("boom", { status: 500 }));
+    const step = await runLlmStep(db, runId, 0, f as typeof fetch);
+    expect(step.status).toBe("failed");
+    expect((db.select().from(flowRuns).where(eq(flowRuns.id, runId)).all()[0]).status).toBe("waiting_human");
+  });
+});
+
+describe("兜底动作", () => {
+  beforeEach(() => {
+    db.update(executors).set({ enabled: true, role: "executor" }).where(eq(executors.name, "快速模型")).run();
+  });
+  it("retry:attempt+1 回 pending", async () => {
+    const { runId } = startRun(db, readyTaskId);
+    const f = vi.fn().mockResolvedValue(new Response("boom", { status: 500 }));
+    const failed = await runLlmStep(db, runId, 0, f as typeof fetch);
+    const step = retryStep(db, runId, failed.stepIndex);
+    expect(step.attempt).toBe(2);
+    expect(step.status).toBe("pending");
+  });
+  it("manual_override:人工产出直接 done", async () => {
+    const { runId } = startRun(db, readyTaskId);
+    const f = vi.fn().mockResolvedValue(new Response("boom", { status: 500 }));
+    const failed = await runLlmStep(db, runId, 0, f as typeof fetch);
+    const step = manualOverrideStep(db, runId, failed.stepIndex, "人工产出");
+    expect(step.status).toBe("done");
+    expect(step.output).toBe("人工产出");
+    expect(step.feedbackNote).toBe("manual_override");
+  });
+  it("skip:仅 optional 步骤可跳过", async () => {
+    const { runId } = startRun(db, readyTaskId); // S 通道第 0 步非 optional
+    expect(() => skipStep(db, runId, 0)).toThrow(/optional/);
   });
 });
