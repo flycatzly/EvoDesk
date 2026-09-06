@@ -20,6 +20,7 @@ describe("task status machine", () => {
   it("review → done 合法,running → review 合法(runner 完成聚合驱动,规格 §6),archived 终态", () => {
     expect(canTransition("review", "done")).toBe(true);
     expect(canTransition("running", "review")).toBe(true);
+    expect(canTransition("waiting_human", "review")).toBe(true);
     expect(canTransition("archived", "done")).toBe(false);
   });
 });

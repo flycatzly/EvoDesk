@@ -1,0 +1,29 @@
+import type { Db } from "@/lib/db/test-util";
+import { executors } from "@/lib/db/schema";
+import { getStepDefs, type StepDef } from "./step-def";
+
+// 测试与下游(Task 5/6 runner)统一从本模块导入;step-def.ts 持有定义
+export { getStepDefs, type StepDef };
+
+export interface ResolvedExecutor {
+  id: string; name: string; type: string; role: string; enabled: boolean;
+  model: string | null; apiBase: string | null; protocol: string | null;
+  apiKeyRef: string | null; costPer1kInput: number; costPer1kOutput: number;
+  shell: string | null; workingDir: string | null; timeoutMs: number; autoApprove: boolean;
+}
+
+export function resolveStepExecutor(db: Db, role: string): ResolvedExecutor | null {
+  const all = db.select().from(executors).all() as unknown as ResolvedExecutor[];
+  const enabled = all.filter((e) => e.type === "llm" && e.enabled);
+  return enabled.find((e) => e.role === role) ?? enabled.find((e) => e.role === "executor") ?? null;
+}
+
+export function renderPrompt(
+  prompt: string,
+  vars: { task: { title: string; description: string }; prevOutput: string },
+): string {
+  return prompt
+    .replaceAll("{{task.title}}", vars.task.title)
+    .replaceAll("{{task.description}}", vars.task.description)
+    .replaceAll("{{prev_output}}", vars.prevOutput);
+}
