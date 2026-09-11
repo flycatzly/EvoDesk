@@ -28,6 +28,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     ?? (chat.defaultExecutorId ? enabledLlm.find((e) => e.id === chat.defaultExecutorId) : undefined)
     ?? enabledLlm.find((e) => e.role === "executor") ?? enabledLlm[0];
   if (!ex) return new Response(JSON.stringify({ error: "未配置可用模型:请在执行器页启用一个 LLM 执行器,或导入供应商档案后派生" }), { status: 400, headers: { "content-type": "application/json" } });
+  // 配置校验必须先于用户消息落库:所有 400 均为 pre-persist,客户端"移除乐观消息"的契约才始终成立
+  let cfg;
+  try { cfg = executorLlmConfig(ex); } catch (e) {
+    return new Response(JSON.stringify({ error: `执行器配置错误:${String(e)}` }), { status: 400, headers: { "content-type": "application/json" } });
+  }
 
   // 用户消息先落库(诚实历史):随后流式失败也不回滚,仅以 {done:true,error} 收尾、无 assistant 行
   const nowIso = new Date().toISOString();
@@ -35,11 +40,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   db.insert(chatMessages).values(userMsg).run();
   const history = db.select().from(chatMessages).where(eq(chatMessages.chatId, id)).orderBy(asc(chatMessages.createdAt)).all() as (typeof chatMessages.$inferSelect)[];
   const llmMessages = [{ role: "system" as const, content: SYSTEM }, ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))];
-
-  let cfg;
-  try { cfg = executorLlmConfig(ex); } catch (e) {
-    return new Response(JSON.stringify({ error: `执行器配置错误:${String(e)}` }), { status: 400, headers: { "content-type": "application/json" } });
-  }
   // streamLlm 内置 120s abort(chats 无 runner 清扫耦合,无阈值约束)
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -56,6 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         for (;;) {
           const r = await gen.next();
           if (r.done) {
+            if (closed) break; // 客户端已断开:回复从未送达,不落 assistant 行(仅用户消息保留),上游已完整消费、无需 gen.return
             const result = r.value;
             const finishedAt = new Date().toISOString();
             const assistantMsg = {
