@@ -15,7 +15,7 @@ const GROUPS: { label: string; items: { href: string; label: string; icon: React
     { href: "/calendar", label: "日历", icon: I("M8 2v4M16 2v4M3 8h18M5 4h14v18H5z"), ready: false },
   ]},
   { label: "AI", items: [
-    { href: "/chat", label: "对话台", icon: I("M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z"), ready: false },
+    { href: "/chat", label: "对话台", icon: I("M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z"), ready: true },
   ]},
   { label: "资产", items: [
     { href: "/flows", label: "流程库", icon: I("M4 6h16M4 12h10M4 18h7"), ready: false },
