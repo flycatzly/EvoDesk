@@ -175,13 +175,15 @@ export function approveCheckpoint(db: Db, runId: string, stepIndex: number) {
 export function rejectCheckpoint(db: Db, runId: string, stepIndex: number, note: string, targetIndex?: number) {
   const cur = requireCurrent(db, runId, stepIndex);
   if (cur.executorType !== "checkpoint" || cur.status !== "pending") throw new RunError("当前步骤不是待审核 checkpoint");
-  setStep(db, cur.id, { rejected: cur.rejected + 1, feedbackNote: note.slice(0, 500) });
+  // 先验后写:目标校验全部通过后才落库,失败路径不得污染 rejected 计数(§9 打回率)
   const steps = getSteps(db, runId);
+  const isReworkType = (s: { executorType: string }) => ["llm", "manual", "script"].includes(s.executorType);
   const target = targetIndex != null
-    ? steps.find((s) => s.stepIndex === targetIndex)
-    : [...steps].reverse().find((s) => s.stepIndex < stepIndex && ["llm", "manual", "script"].includes(s.executorType));
+    ? steps.find((s) => s.stepIndex === targetIndex && isReworkType(s))
+    : [...steps].reverse().find((s) => s.stepIndex < stepIndex && isReworkType(s));
   if (!target) throw new RunError("没有可打回的目标步骤");
   if (!(STEP_TERMINAL as readonly string[]).includes(target.status)) throw new RunError("目标步骤未完成,不可打回");
+  setStep(db, cur.id, { rejected: cur.rejected + 1, feedbackNote: note.slice(0, 500) });
   setStep(db, target.id, { status: "pending" });
   syncRunStatus(db, runId);
 }

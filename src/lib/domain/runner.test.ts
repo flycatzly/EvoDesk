@@ -176,4 +176,26 @@ describe("checkpoint", () => {
     const target = db.select().from(stepRuns).where(eq(stepRuns.runId, runId)).all().find((s) => s.stepIndex === 0)!;
     expect(target.status).toBe("pending");
   });
+  it("reject 无有效目标 → 抛错且不写 rejected(先验后写)", async () => {
+    // checkpoint-first 模板:checkpoint 为当前步,且其之前无任何 llm/manual/script 候选目标
+    const tpl = db.select().from(flowTemplates).all().find((t) => t.name === "S 轻量通道")!;
+    db.update(flowTemplates).set({ steps: JSON.stringify([{ name: "审核", type: "checkpoint" }, { name: "生成", type: "llm", executorRole: "executor" }]) }).where(eq(flowTemplates.id, tpl.id)).run();
+    const { runId } = startRun(db, readyTaskId);
+    const cp = db.select().from(stepRuns).where(eq(stepRuns.runId, runId)).all().find((s) => s.stepIndex === 0)!;
+    expect(cp.executorType).toBe("checkpoint");
+    expect(() => rejectCheckpoint(db, runId, 0, "x")).toThrow(/没有可打回的目标步骤/);
+    const cpAfter = db.select().from(stepRuns).where(eq(stepRuns.id, cp.id)).all()[0];
+    expect(cpAfter.rejected).toBe(0);
+    expect(cpAfter.feedbackNote).toBeNull();
+  });
+  it("reject 显式目标同样按类型过滤(不可打回到 checkpoint,防循环)", async () => {
+    const tpl = db.select().from(flowTemplates).all().find((t) => t.name === "S 轻量通道")!;
+    db.update(flowTemplates).set({ steps: JSON.stringify([{ name: "审核", type: "checkpoint" }, { name: "复审", type: "checkpoint" }]) }).where(eq(flowTemplates.id, tpl.id)).run();
+    const { runId } = startRun(db, readyTaskId);
+    const cp1 = db.select().from(stepRuns).where(eq(stepRuns.runId, runId)).all().find((s) => s.stepIndex === 1)!;
+    db.update(stepRuns).set({ status: "done" }).where(eq(stepRuns.id, cp1.id)).run();
+    expect(() => rejectCheckpoint(db, runId, 0, "x", 1)).toThrow(/没有可打回的目标步骤/);
+    const cp1After = db.select().from(stepRuns).where(eq(stepRuns.id, cp1.id)).all()[0];
+    expect(cp1After.status).toBe("done"); // 未被重开
+  });
 });
