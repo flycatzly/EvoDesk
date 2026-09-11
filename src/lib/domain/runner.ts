@@ -98,7 +98,9 @@ export async function runLlmStep(db: Db, runId: string, stepIndex: number, fetch
   const cur = requireCurrent(db, runId, stepIndex);
   if (cur.executorType !== "llm" || cur.status !== "pending") throw new RunError("当前步骤不可执行 LLM");
   const run = getRun(db, runId)!;
+  if (run.status !== "running") throw new RunError("run 已结束或已取消", 409);
   const def = getStepDefsForRun(db, runId)[stepIndex];
+  if (!def) throw new RunError("步骤定义不存在(模板可能已变更)", 409);
   const task = db.select().from(tasks).where(eq(tasks.id, run.taskId)).all()[0] as typeof tasks.$inferSelect;
   const ex = resolveStepExecutor(db, def.executorRole ?? "executor");
   const nowIso = new Date().toISOString();
@@ -150,6 +152,7 @@ export function manualOverrideStep(db: Db, runId: string, stepIndex: number, out
 export function skipStep(db: Db, runId: string, stepIndex: number) {
   // getStepDefsForRun 对不存在的 run 抛 404,无需单独 getRun 校验
   const def = getStepDefsForRun(db, runId)[stepIndex];
+  if (!def) throw new RunError("步骤定义不存在(模板可能已变更)", 409);
   const cur = requireCurrent(db, runId, stepIndex);
   if (!def.optional || cur.status !== "pending") throw new RunError("仅当前 pending 的 optional 步骤可跳过");
   const s = setStep(db, cur.id, { status: "skipped", finishedAt: new Date().toISOString() });
@@ -157,8 +160,28 @@ export function skipStep(db: Db, runId: string, stepIndex: number) {
   return s;
 }
 export function markStepFailed(db: Db, runId: string, stepIndex: number, error: string) {
-  const cur = getCurrentStep(db, runId);
-  const s = setStep(db, cur!.id, { status: "failed", error: error.slice(0, 500), finishedAt: new Date().toISOString() });
+  const cur = requireCurrent(db, runId, stepIndex);
+  const s = setStep(db, cur.id, { status: "failed", error: error.slice(0, 500), finishedAt: new Date().toISOString() });
   syncRunStatus(db, runId);
   return s;
+}
+
+export function approveCheckpoint(db: Db, runId: string, stepIndex: number) {
+  const cur = requireCurrent(db, runId, stepIndex);
+  if (cur.executorType !== "checkpoint" || cur.status !== "pending") throw new RunError("当前步骤不是待审核 checkpoint");
+  setStep(db, cur.id, { status: "done", finishedAt: new Date().toISOString() });
+  syncRunStatus(db, runId);
+}
+export function rejectCheckpoint(db: Db, runId: string, stepIndex: number, note: string, targetIndex?: number) {
+  const cur = requireCurrent(db, runId, stepIndex);
+  if (cur.executorType !== "checkpoint" || cur.status !== "pending") throw new RunError("当前步骤不是待审核 checkpoint");
+  setStep(db, cur.id, { rejected: cur.rejected + 1, feedbackNote: note.slice(0, 500) });
+  const steps = getSteps(db, runId);
+  const target = targetIndex != null
+    ? steps.find((s) => s.stepIndex === targetIndex)
+    : [...steps].reverse().find((s) => s.stepIndex < stepIndex && ["llm", "manual", "script"].includes(s.executorType));
+  if (!target) throw new RunError("没有可打回的目标步骤");
+  if (!(STEP_TERMINAL as readonly string[]).includes(target.status)) throw new RunError("目标步骤未完成,不可打回");
+  setStep(db, target.id, { status: "pending" });
+  syncRunStatus(db, runId);
 }

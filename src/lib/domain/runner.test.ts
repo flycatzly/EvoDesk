@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createTestDb } from "@/lib/db/test-util";
 import { seedIfEmpty } from "@/lib/db/seed";
-import { startRun, getCurrentStep, syncRunStatus, RunError, runLlmStep, retryStep, manualOverrideStep, skipStep } from "./runner";
+import { startRun, getCurrentStep, syncRunStatus, RunError, runLlmStep, retryStep, manualOverrideStep, skipStep, approveCheckpoint, rejectCheckpoint } from "./runner";
 import { tasks, flowRuns, stepRuns, flowTemplates, executors } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -109,6 +109,18 @@ describe("runLlmStep", () => {
     expect(step.status).toBe("failed");
     expect((db.select().from(flowRuns).where(eq(flowRuns.id, runId)).all()[0]).status).toBe("waiting_human");
   });
+  it("已取消的 run 不可执行 llm 步(守卫)", async () => {
+    const { runId } = startRun(db, readyTaskId);
+    db.update(flowRuns).set({ status: "canceled" }).where(eq(flowRuns.id, runId)).run();
+    await expect(runLlmStep(db, runId, 0, undefined as unknown as typeof fetch)).rejects.toThrow(/已结束或已取消/);
+  });
+  it("模板步骤被裁剪后执行 → RunError 而非 TypeError", async () => {
+    db.update(executors).set({ enabled: true, role: "executor" }).where(eq(executors.name, "快速模型")).run();
+    const { runId } = startRun(db, readyTaskId);
+    const tpl = db.select().from(flowTemplates).all().find((t) => t.name === "S 轻量通道")!;
+    db.update(flowTemplates).set({ steps: "[]" }).where(eq(flowTemplates.id, tpl.id)).run();
+    await expect(runLlmStep(db, runId, 0, undefined as unknown as typeof fetch)).rejects.toThrow(/步骤定义不存在/);
+  });
 });
 
 describe("兜底动作", () => {
@@ -135,5 +147,33 @@ describe("兜底动作", () => {
   it("skip:仅 optional 步骤可跳过", async () => {
     const { runId } = startRun(db, readyTaskId); // S 通道第 0 步非 optional
     expect(() => skipStep(db, runId, 0)).toThrow(/optional/);
+  });
+});
+
+describe("checkpoint", () => {
+  beforeEach(() => {
+    db.update(executors).set({ enabled: true, role: "executor" }).where(eq(executors.name, "快速模型")).run();
+  });
+  it("approve:通过后到末尾 → run done/task review(需先把 llm 步跑完)", async () => {
+    const { runId } = startRun(db, readyTaskId);
+    const f = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }], usage: {}, model: "m" }), { status: 200 }));
+    await runLlmStep(db, runId, 0, f as typeof fetch);
+    const cur = getCurrentStep(db, runId)!; // checkpoint(第 1 步)
+    expect(cur.executorType).toBe("checkpoint");
+    approveCheckpoint(db, runId, cur.stepIndex);
+    expect((db.select().from(flowRuns).where(eq(flowRuns.id, runId)).all()[0]).status).toBe("done");
+    expect((db.select().from(tasks).where(eq(tasks.id, readyTaskId)).all()[0]).status).toBe("review");
+  });
+  it("reject:checkpoint 标记 rejected,目标步骤回 pending", async () => {
+    const { runId } = startRun(db, readyTaskId);
+    const f = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }], usage: {}, model: "m" }), { status: 200 }));
+    await runLlmStep(db, runId, 0, f as typeof fetch);
+    const cur = getCurrentStep(db, runId)!;
+    rejectCheckpoint(db, runId, cur.stepIndex, "质量不行");
+    const cp = db.select().from(stepRuns).where(eq(stepRuns.runId, runId)).all().find((s) => s.stepIndex === cur.stepIndex)!;
+    expect(cp.rejected).toBe(1);
+    expect(cp.feedbackNote).toBe("质量不行");
+    const target = db.select().from(stepRuns).where(eq(stepRuns.runId, runId)).all().find((s) => s.stepIndex === 0)!;
+    expect(target.status).toBe("pending");
   });
 });
