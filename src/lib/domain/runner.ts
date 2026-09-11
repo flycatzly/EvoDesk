@@ -1,4 +1,4 @@
-import { eq, asc } from "drizzle-orm";
+import { and, asc, eq, inArray, lt } from "drizzle-orm";
 import type { Db } from "@/lib/db/test-util";
 import { flowRuns, stepRuns, tasks, flowTemplates } from "@/lib/db/schema";
 import { canTransition, type TaskStatus } from "@/lib/domain/status";
@@ -35,6 +35,9 @@ export function startRun(db: Db, taskId: string): { runId: string } {
   const task = db.select().from(tasks).where(eq(tasks.id, taskId)).all()[0] as typeof tasks.$inferSelect | undefined;
   if (!task) throw new RunError("任务不存在", 404);
   if (task.status !== "ready") throw new RunError(`任务状态为 ${task.status},仅就绪任务可开始执行`);
+  // 防重入兜底:任务可能被手工挪回 ready 但旧 run 仍在进行,禁止二次开始(状态机外的漏洞)
+  const activeRuns = db.select().from(flowRuns).where(and(eq(flowRuns.taskId, taskId), inArray(flowRuns.status, ["running", "waiting_human"]))).all();
+  if (activeRuns.length > 0) throw new RunError("该任务已有进行中的执行");
   if (!task.flowTemplateId) throw new RunError("任务未绑定流程模板,请先在收件箱完成分诊确认");
   const tpl = db.select().from(flowTemplates).where(eq(flowTemplates.id, task.flowTemplateId)).all()[0] as typeof flowTemplates.$inferSelect | undefined;
   if (!tpl || tpl.status !== "active") throw new RunError("绑定的流程模板不存在或未激活");
@@ -55,6 +58,10 @@ export function syncRunStatus(db: Db, runId: string): void {
   const run = getRun(db, runId);
   if (!run || ["done", "failed", "canceled"].includes(run.status)) return;
   const nowIso = new Date().toISOString();
+  // 进程中断自愈:llm 步骤 running 超 120s 视为失败(callLlm 上限 30s×2 次 + 重试退避 < 61s)
+  const staleCutoff = new Date(Date.now() - 120_000).toISOString();
+  db.update(stepRuns).set({ status: "failed", error: "执行进程中断,可重试或人工接管", finishedAt: nowIso })
+    .where(and(eq(stepRuns.runId, runId), eq(stepRuns.status, "running"), eq(stepRuns.executorType, "llm"), lt(stepRuns.startedAt, staleCutoff))).run();
   const cur = getCurrentStep(db, runId);
   if (!cur) {
     const steps = getSteps(db, runId);

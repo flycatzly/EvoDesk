@@ -82,6 +82,16 @@ describe("syncRunStatus 契约", () => {
     syncRunStatus(db, runId);
     expect(db.select().from(flowRuns).where(eq(flowRuns.id, runId)).all()[0]).toEqual(before);
   });
+  it("stale sweep:llm 步 running 超 120s 视为失败(进程中断自愈)→ run 转等待人工", () => {
+    const { runId } = startRun(db, readyTaskId);
+    const s0 = (db.select().from(stepRuns).where(eq(stepRuns.runId, runId)).all() as (typeof stepRuns.$inferSelect)[]).find((s) => s.stepIndex === 0)!;
+    db.update(stepRuns).set({ status: "running", startedAt: new Date(Date.now() - 3 * 60_000).toISOString() }).where(eq(stepRuns.id, s0.id)).run();
+    syncRunStatus(db, runId);
+    const after = db.select().from(stepRuns).where(eq(stepRuns.id, s0.id)).all()[0] as typeof stepRuns.$inferSelect;
+    expect(after.status).toBe("failed");
+    expect(after.error).toContain("进程中断");
+    expect((db.select().from(flowRuns).where(eq(flowRuns.id, runId)).all()[0] as typeof flowRuns.$inferSelect).status).toBe("waiting_human");
+  });
 });
 
 describe("runLlmStep", () => {
