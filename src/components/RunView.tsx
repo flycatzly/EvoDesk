@@ -132,7 +132,8 @@ export function RunView({ taskId: _taskId, taskStatus, run, steps, stepDefs }: {
       if (data) {
         // script 确认门:execute 响应携带 {command, risks, awaiting},风险列表存状态供确认面板渲染
         if (data.awaiting === true) setRisks(Array.isArray(data.risks) ? (data.risks as string[]) : []);
-        if (action === "submit") setInput("");
+        // 成功才清空:失败路径保留用户输入;接管/提交成功后清空,避免旧产出残留在后续面板
+        if (action === "submit" || action === "manual_override") setInput("");
         if (action === "reject") setRejectNote("");
         router.refresh();
       }
@@ -232,6 +233,11 @@ export function RunView({ taskId: _taskId, taskStatus, run, steps, stepDefs }: {
           <div className="surface p-3 mb-4">
             <div className="text-sm mb-2">{def?.name ?? current.stepName} · 执行中…</div>
             <pre className="text-xs whitespace-pre-wrap m-0" style={{ color: "var(--muted)" }}>{current.output || streamText || "…"}</pre>
+            {current.status === "pending" && skippable && (
+              <div className="flex gap-2 mt-2">
+                <button type="button" disabled={busy} className={ghostRow} onClick={() => act("skip")}>跳过</button>
+              </div>
+            )}
           </div>
         );
       }
@@ -240,9 +246,10 @@ export function RunView({ taskId: _taskId, taskStatus, run, steps, stepDefs }: {
           <div className="surface p-3 mb-4">
             <div className="text-sm mb-1">{def?.name ?? current.stepName}</div>
             <div className="text-xs mb-2" style={{ color: "var(--danger)" }}>{current.error ?? "执行失败"}</div>
+            <textarea className="input w-full px-3 py-2 text-sm mb-2" rows={4} placeholder="人工产出(必填,后续步骤将以其作为上游输入)" value={input} onChange={(e) => setInput(e.target.value)} />
             <div className="flex gap-2">
               <button type="button" disabled={busy} className={actionRow} onClick={() => act("retry")}>重试</button>
-              <button type="button" disabled={busy} className={ghostRow} onClick={() => act("manual_override", { output: input })}>人工填写</button>
+              <button type="button" disabled={busy || !input.trim()} className={ghostRow} onClick={() => act("manual_override", { output: input })}>人工填写</button>
             </div>
           </div>
         );
@@ -254,7 +261,10 @@ export function RunView({ taskId: _taskId, taskStatus, run, steps, stepDefs }: {
           <div className="text-sm mb-1">{def?.name ?? current.stepName}</div>
           <div className="text-xs mb-2" style={{ color: "var(--muted)" }}>{instruction}</div>
           <textarea className="input w-full px-3 py-2 text-sm mb-2" rows={4} value={input} onChange={(e) => setInput(e.target.value)} />
-          <button type="button" disabled={busy || !input.trim()} className={actionRow} onClick={() => act("submit", { output: input })}>提交产出</button>
+          <div className="flex gap-2">
+            <button type="button" disabled={busy || !input.trim()} className={actionRow} onClick={() => act("submit", { output: input })}>提交产出</button>
+            {skippable && <button type="button" disabled={busy} className={ghostRow} onClick={() => act("skip")}>跳过</button>}
+          </div>
         </div>
       );
     }
@@ -308,9 +318,10 @@ export function RunView({ taskId: _taskId, taskStatus, run, steps, stepDefs }: {
           <div className="surface p-3 mb-4">
             <div className="text-sm mb-1">{def?.name ?? current.stepName}</div>
             <div className="text-xs mb-2" style={{ color: "var(--danger)" }}>{current.error ?? "执行失败"}</div>
+            <textarea className="input w-full px-3 py-2 text-sm mb-2" rows={4} placeholder="人工产出(必填,后续步骤将以其作为上游输入)" value={input} onChange={(e) => setInput(e.target.value)} />
             <div className="flex gap-2">
               <button type="button" disabled={busy} className={actionRow} onClick={() => act("retry")}>重试</button>
-              <button type="button" disabled={busy} className={ghostRow} onClick={() => act("manual_override", { output: input })}>人工填写</button>
+              <button type="button" disabled={busy || !input.trim()} className={ghostRow} onClick={() => act("manual_override", { output: input })}>人工填写</button>
             </div>
           </div>
         );
