@@ -21,9 +21,14 @@ function parseTags(raw: string): string[] {
 
 export function TaskCard({ task, projectName }: { task: Task; projectName?: string }) {
   const tags = parseTags(task.tags);
-  // inbox/triaging 不在任务看板渲染,深链 /tasks#task-<id> 会是死链,改指收件箱
+  // 收件箱类进收件箱;执行相关状态进执行视图;其余(完成/归档/取消)回看板锚点
+  const detailHref = ["inbox", "triaging"].includes(task.status)
+    ? "/inbox"
+    : ["ready", "running", "waiting_human", "review"].includes(task.status)
+      ? `/tasks/${task.id}`
+      : `/tasks#task-${task.id}`;
   return (
-    <Link href={["inbox", "triaging"].includes(task.status) ? "/inbox" : `/tasks#task-${task.id}`} className="surface block p-3 mb-2 hover:opacity-90">
+    <Link href={detailHref} className="surface block p-3 mb-2 hover:opacity-90">
       <div className="flex items-center gap-2">
         <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "var(--surface-2)", color: "var(--muted)" }}>{STATUS_LABEL[task.status]}</span>
         <span className="text-xs px-1.5 py-0.5 rounded" style={{ color: COMPLEXITY_COLOR[task.complexity] }}>{task.complexity}</span>
