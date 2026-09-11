@@ -186,8 +186,10 @@ export function markStepFailed(db: Db, runId: string, stepIndex: number, error: 
   return s;
 }
 
-/** 步骤终态统一落库:覆写产出/成本/错误并 syncRunStatus。调用方须先确认 run 未取消(取消后步骤已被置 skipped,不得覆写)。 */
+/** 步骤终态统一落库:覆写产出/成本/错误并 syncRunStatus。自守:run 已取消时不落库不 sync,直接返回当前步骤(取消后步骤已被置 skipped,不得覆写)。 */
 export function persistStepTerminal(db: Db, runId: string, stepIndex: number, patch: Partial<typeof stepRuns.$inferInsert>) {
+  const run = getRun(db, runId);
+  if (run?.status === "canceled") return getSteps(db, runId)[stepIndex]; // 已取消:步骤已被置 skipped,不得覆写
   db.update(stepRuns).set(patch).where(and(eq(stepRuns.runId, runId), eq(stepRuns.stepIndex, stepIndex))).run();
   syncRunStatus(db, runId);
   return getSteps(db, runId)[stepIndex];

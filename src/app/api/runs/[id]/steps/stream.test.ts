@@ -83,6 +83,23 @@ function simulateCancel(runId: string) {
   db.update(flowRuns).set({ status: "canceled", finishedAt: nowIso }).where(eq(flowRuns.id, runId)).run();
   db.update(stepRuns).set({ status: "skipped", finishedAt: nowIso }).where(eq(stepRuns.id, stepOf(runId, 0).id)).run();
 }
+/** 两段式上游:release1 放行首批 delta,release2 放行剩余(可指定 error 收尾)——用于断连时序控制 */
+function gatedUpstream(part1: string[], part2: string[], part2Error?: Error) {
+  let release1!: () => void; let release2!: () => void;
+  const g1 = new Promise<void>((r) => { release1 = r; });
+  const g2 = new Promise<void>((r) => { release2 = r; });
+  const enc = new TextEncoder();
+  const f = vi.fn().mockImplementation(async () => new Response(new ReadableStream({
+    async start(c) {
+      await g1;
+      part1.forEach((s) => c.enqueue(enc.encode(s)));
+      await g2;
+      part2.forEach((s) => c.enqueue(enc.encode(s)));
+      if (part2Error) c.error(part2Error); else c.close();
+    },
+  }), { status: 200, headers: { "content-type": "text/event-stream" } }));
+  return { f, release1, release2 };
+}
 
 describe("GET /api/runs/[id]/steps/[n]/stream", () => {
   it("SSE happy path:delta 事件 + done 事件,步骤落库 done,run.totalCostUsd 聚合", async () => {
@@ -118,6 +135,7 @@ describe("GET /api/runs/[id]/steps/[n]/stream", () => {
     expect((await res.json() as { error: string }).error).toContain("已结束或已取消");
   });
   it("running-claim 竞争:步骤已被其他请求置 running → 409 正在执行", async () => {
+    // 注:claim.changes===0 丢失竞争分支不可在本进程内确定性触发(cur 读取与条件 UPDATE 间无 await 可插队),由条件 WHERE 兜底
     const runId = await startAndExecute();
     db.update(stepRuns).set({ status: "running", startedAt: new Date().toISOString() }).where(eq(stepRuns.id, stepOf(runId, 0).id)).run();
     const res = await STREAM(STREAM_URL(runId), streamParams(runId));
@@ -168,6 +186,44 @@ describe("GET /api/runs/[id]/steps/[n]/stream", () => {
     expect(done.step.status).toBe("failed");
     expect(stepOf(runId, 0).status).toBe("failed");
     expect(runOf(runId).status).toBe("waiting_human"); // failed 是当前步 → 等待人工
+  });
+  it("客户端中途断开:send 断连安全,无 spurious failed;上游走完仍正常 done 落库", async () => {
+    const runId = await startAndExecute();
+    const { f, release1, release2 } = gatedUpstream([YOUHAO_CHUNKS[0], YOUHAO_CHUNKS[1]], [YOUHAO_CHUNKS[2], YOUHAO_CHUNKS[3]]);
+    vi.stubGlobal("fetch", f);
+    const res = await STREAM(STREAM_URL(runId), streamParams(runId));
+    expect(f).toHaveBeenCalled();
+    release1();
+    const reader = res.body!.getReader();
+    const dec = new TextDecoder();
+    expect(dec.decode((await reader.read()).value!)).toContain('"delta":"你"');
+    expect(dec.decode((await reader.read()).value!)).toContain('"delta":"好"');
+    await reader.cancel(); // 客户端断开:此后 enqueue 会抛出
+    release2();
+    await vi.waitFor(() => expect(stepOf(runId, 0).status).not.toBe("running"));
+    expect(stepOf(runId, 0).status).toBe("done"); // 上游完整走完 → 正常 done(而非断开引发的 failed)
+    expect(stepOf(runId, 0).output).toBe("你好");
+    expect(stepOf(runId, 0).error).toBeNull();
+  });
+  it("客户端中途断开且上游随后报错:断连分支不落库不发事件(断开 ≠ 步骤失败)", async () => {
+    const runId = await startAndExecute();
+    const { f, release1, release2 } = gatedUpstream(
+      [YOUHAO_CHUNKS[0]],
+      ['data: {"choices":[{"delta":{"content":"断开后 delta"}}]}\n\n'],
+      new Error("上游炸了"),
+    );
+    vi.stubGlobal("fetch", f);
+    const res = await STREAM(STREAM_URL(runId), streamParams(runId));
+    expect(f).toHaveBeenCalled();
+    release1();
+    const reader = res.body!.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value!)).toContain('"delta":"你"');
+    await reader.cancel();
+    release2(); // 断开后的 delta 使 send 抛出置 closed,随后上游 error → catch 断连分支:不落库
+    await new Promise((r) => setTimeout(r, 20)); // 断连分支全在微任务/IO 内完成,留出事件循环时间
+    expect(stepOf(runId, 0).status).toBe("running"); // 不落库:既非 failed 也未推进
+    expect(stepOf(runId, 0).error).toBeNull();
+    expect(runOf(runId).status).toBe("running");
   });
   it("无可用执行器 → 409 + markStepFailed(错误含 可用)", async () => {
     const runId = await startAndExecute();

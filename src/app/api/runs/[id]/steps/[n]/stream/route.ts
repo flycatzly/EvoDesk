@@ -54,9 +54,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      // 断连安全:客户端断开后 enqueue 会抛,置 closed 后静默丢弃后续事件
+      let closed = false;
+      const send = (obj: unknown) => {
+        if (closed) return;
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); } catch { closed = true; }
+      };
+      const gen = streamLlm(cfg, [{ role: "user", content: prompt }]);
+      let completed = false;
       try {
-        const gen = streamLlm(cfg, [{ role: "user", content: prompt }]);
         for (;;) {
           const r = await gen.next();
           if (r.done) {
@@ -78,7 +84,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           }
           send({ delta: r.value });
         }
+        completed = true;
       } catch (e) {
+        if (closed) {
+          // 客户端已断开:断开不是步骤失败,不落库不发事件,释放上游 reader 即可
+          try { await gen.return(undefined as never); } catch { /* 已终止 */ }
+          return;
+        }
         const fresh = getRun(db, runId)!;
         if (fresh.status !== "canceled") {
           const persisted = persistStepTerminal(db, runId, stepIndex, {
@@ -88,8 +100,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         } else {
           send({ done: true, canceled: true });
         }
+      } finally {
+        // streamLlm 消费契约:未完整消费(断开/上游异常)须 gen.return() 释放底层 reader
+        if (!completed) { try { await gen.return(undefined as never); } catch { /* 已终止 */ } }
       }
-      controller.close();
+      try { controller.close(); } catch { /* 客户端已断开,流已被取消 */ }
     },
   });
   return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" } });
