@@ -42,4 +42,12 @@ describe("seedIfEmpty", () => {
     expect(ex.filter((e) => e.role === "reviewer").length).toBe(1);
     expect((db.select().from(chats).all() as unknown[]).length).toBe(1);
   });
+  it("旧库升级:已有数据时仍补齐 reviewer 占位与会话", () => {
+    const db = createTestDb();
+    db.insert(tasks).values({ id: crypto.randomUUID(), title: "旧任务", status: "inbox", tags: "[]", complexity: "S", priority: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }).run();
+    seedIfEmpty(db);
+    const ex = db.select().from(executors).all() as (typeof executors.$inferSelect)[];
+    expect(ex.some((e) => e.name === "审查占位模型")).toBe(true);
+    expect((db.select().from(chats).all() as unknown[]).length).toBe(1);
+  });
 });
