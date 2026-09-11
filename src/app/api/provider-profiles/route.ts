@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
   const protocol = body.protocol === "openai" ? "openai" : "anthropic";
   const profile = {
     id: crypto.randomUUID(), name: body.name.trim(), protocol, apiBase: body.api_base.trim(),
-    apiKeyRef: `plain:${body.api_key}`,
+    apiKeyRef: `plain:${(body.api_key as string).trim()}`,
     candidates: JSON.stringify(Array.isArray(body.candidates) ? body.candidates : []),
     source: "manual", createdAt: new Date().toISOString(),
   };

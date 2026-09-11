@@ -38,6 +38,13 @@ describe("executors [id] + collection", () => {
     const bad = await CREATE_EX(req("/api/executors", { method: "POST", body: JSON.stringify({ name: "x", role: "boss" }) }));
     expect(bad.status).toBe(400);
   });
+  it("POST 缺 name/缺 model/缺 api_base 400;PATCH role 非法 400", async () => {
+    expect((await CREATE_EX(req("/api/executors", { method: "POST", body: JSON.stringify({ model: "m", api_base: "https://x" }) }))).status).toBe(400);
+    expect((await CREATE_EX(req("/api/executors", { method: "POST", body: JSON.stringify({ name: "y", api_base: "https://x" }) }))).status).toBe(400);
+    expect((await CREATE_EX(req("/api/executors", { method: "POST", body: JSON.stringify({ name: "y", model: "m" }) }))).status).toBe(400);
+    const ex = (db.select().from(executors).all() as (typeof executors.$inferSelect)[])[0];
+    expect((await PATCH_EXEC(req(`/api/executors/${ex.id}`, { method: "PATCH", body: JSON.stringify({ role: "boss" }) }), { params: Promise.resolve({ id: ex.id }) })).status).toBe(400);
+  });
   it("test:ping 模型连通性(mock fetch)", async () => {
     db.update(executors).set({ enabled: true, role: "executor", apiKeyRef: "plain:sk-ping" }).where(eq(executors.name, "快速模型")).run();
     const ex = (db.select().from(executors).all() as (typeof executors.$inferSelect)[]).find((e) => e.name === "快速模型")!;

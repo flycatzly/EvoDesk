@@ -11,12 +11,20 @@ export interface ParsedProfile {
   name: string; protocol: "anthropic" | "openai"; apiBase: string; apiKeyRef: string;
   candidates: ProfileCandidate[]; staleSections: string[];
 }
+// 档位白名单:derive 路由校验入参用
+export const PROFILE_TIERS = ["primary", "opus", "sonnet", "haiku"] as const;
 // 桌面端用不到的启动器配置段:导入时识别并在报告中标注(不落库)
 const STALE = ["hooks", "mcpServers", "statusLine", "extraKnownMarketplaces", "enabledPlugins"];
 
 export function parseProfileText(name: string, raw: string): ParsedProfile {
   let cfg: Record<string, unknown>;
-  try { cfg = JSON.parse(raw); } catch (e) { throw new Error(`JSON 解析失败:${String(e).slice(0, 80)}`); }
+  try {
+    cfg = JSON.parse(raw);
+  } catch (e) {
+    // 不回显原文:V8 的 SyntaxError 可能内嵌源码片段(含 token),只报出错位置
+    const pos = (e as SyntaxError).message.match(/position (\d+)/)?.[1] ?? "?";
+    throw new Error(`JSON 解析失败(位置 ${pos}),请检查文件格式`);
+  }
   const env = cfg.env as Record<string, string> | undefined;
   if (!env || typeof env !== "object") throw new Error("缺少 env 段");
   const token = env.ANTHROPIC_AUTH_TOKEN;

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { executors } from "@/lib/db/schema";
+import { EXECUTOR_ROLES } from "@/lib/domain/roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (typeof body.model === "string" || body.model === null) patch.model = body.model as string | null;
   if (typeof body.api_base === "string" || body.api_base === null) patch.apiBase = body.api_base as string | null;
   if (body.protocol === "openai" || body.protocol === "anthropic") patch.protocol = body.protocol;
-  if (typeof body.role === "string") patch.role = body.role;
+  if (typeof body.role === "string") {
+    if (!(EXECUTOR_ROLES as readonly string[]).includes(body.role)) {
+      return NextResponse.json({ error: `role 须为 ${EXECUTOR_ROLES.join("|")}` }, { status: 400 });
+    }
+    patch.role = body.role;
+  }
   if (typeof body.timeout_ms === "number") patch.timeoutMs = body.timeout_ms;
   if (typeof body.working_dir === "string" || body.working_dir === null) patch.workingDir = body.working_dir as string | null;
   if (typeof body.auto_approve === "boolean") patch.autoApprove = body.auto_approve;

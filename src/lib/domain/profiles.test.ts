@@ -38,6 +38,22 @@ describe("parseProfileText", () => {
   it("非 anthropic 端点识别为 openai", () => {
     expect(parseProfileText("x", JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: "k", ANTHROPIC_BASE_URL: "https://api.openai.com/v1" } })).protocol).toBe("openai");
   });
+  it("JSON 解析错误只报位置,不回显密钥原文", () => {
+    const malicious = `{ "env": { ANTHROPIC_AUTH_TOKEN=sk-live-abc123 }`;
+    expect(() => parseProfileText("leak", malicious)).toThrow(/JSON 解析失败\(位置 \d+\)/);
+    try { parseProfileText("leak", malicious); } catch (e) {
+      expect((e as Error).message).not.toContain("sk-live");
+    }
+    const db = createTestDb();
+    seedIfEmpty(db);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "evodesk-leak-"));
+    fs.writeFileSync(path.join(dir, "L.txt"), malicious);
+    const r = importProfilesFromDir(db, dir);
+    expect(r.imported).toHaveLength(0);
+    expect(r.skipped[0].reason).toMatch(/位置/);
+    expect(r.skipped[0].reason).not.toContain("sk-live");
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 });
 
 describe("importProfilesFromDir / deriveExecutors", () => {

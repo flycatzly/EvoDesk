@@ -74,8 +74,12 @@ describe("provider-profiles", () => {
     const missing = await DERIVE(req("/api/provider-profiles/nope/derive", { method: "POST", body: JSON.stringify({ selections: [{ tier: "primary", role: "executor" }] }) }), { params: Promise.resolve({ id: "nope" }) });
     expect(missing.status).toBe(409);
   });
-  it("derive:缺 selections 400", async () => {
+  it("derive:缺 selections 400;role/tier 非法 400", async () => {
     const res = await DERIVE(req("/api/provider-profiles/x/derive", { method: "POST", body: JSON.stringify({}) }), { params: Promise.resolve({ id: "x" }) });
     expect(res.status).toBe(400);
+    const badRole = await DERIVE(req("/api/provider-profiles/x/derive", { method: "POST", body: JSON.stringify({ selections: [{ tier: "opus", role: "boss" }] }) }), { params: Promise.resolve({ id: "x" }) });
+    expect(badRole.status).toBe(400);
+    const badTier = await DERIVE(req("/api/provider-profiles/x/derive", { method: "POST", body: JSON.stringify({ selections: [{ tier: "vip", role: "planner" }] }) }), { params: Promise.resolve({ id: "x" }) });
+    expect(badTier.status).toBe(400);
   });
 });
