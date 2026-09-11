@@ -13,6 +13,15 @@ describe("scanRisk", () => {
     expect(scanRisk("Get-ChildItem .")).toHaveLength(0);
     expect(scanRisk("echo hello")).toHaveLength(0);
   });
+  it("变体与误报回归", () => {
+    expect(scanRisk("Get-Process | Format-Table")).toHaveLength(0);
+    expect(scanRisk("format c:").length).toBeGreaterThan(0);
+    expect(scanRisk("del /f /s /q C:\\x").length).toBeGreaterThan(0);
+    expect(scanRisk("rd /q /s C:\\x").length).toBeGreaterThan(0);
+    expect(scanRisk("Remove-Item C:\\x -Force -Recurse").length).toBeGreaterThan(0);
+    expect(scanRisk("Remove-Item C:\\x -r -fo").length).toBeGreaterThan(0);
+    expect(scanRisk("robocopy C:\\a C:\\b /MIR").length).toBeGreaterThan(0);
+  });
 });
 
 describe("isPathWithin/checkWhitelist", () => {
@@ -30,8 +39,8 @@ describe("isPathWithin/checkWhitelist", () => {
 
 describe("confirmRequired", () => {
   it("静态命令 + autoApprove → 免确认;含渲染变量或未开自动批准 → 需确认", () => {
-    expect(confirmRequired({ command: "echo hi" }, { autoApprove: true })).toBe(false);
-    expect(confirmRequired({ command: "echo {{prev_output}}" }, { autoApprove: true })).toBe(true);
-    expect(confirmRequired({ command: "echo hi" }, { autoApprove: false })).toBe(true);
+    expect(confirmRequired("echo hi", { autoApprove: true })).toBe(false);
+    expect(confirmRequired("echo {{prev_output}}", { autoApprove: true })).toBe(true);
+    expect(confirmRequired("echo hi", { autoApprove: false })).toBe(true);
   });
 });

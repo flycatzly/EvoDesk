@@ -1,10 +1,15 @@
 // src/lib/domain/script-security.ts
 import path from "node:path";
 
+// 启发式告警,非安全保证(规格 §10.2)。
 export const DESTRUCTIVE_PATTERNS: RegExp[] = [
-  /\bdel\s+\/[sq]/i, /\brd\s+\/s/i, /\brmdir\s+\/s/i, /\brm\s+(-[rf]|--recursive)/i,
-  /\bformat\b/i, /remove-item\s+.*-recurse\s+.*-force/i, /\breg\s+delete\b/i,
-  /\bshutdown\b/i, /\bmkfs\b/i, /\bdiskpart\b/i, /\bbcdedit\b/i,
+  /\bdel(\.com)?\b[^|;&]*\/[sq]/i, /\b(rd|rmdir)(\.com)?\b[^|;&]*\/s\b/i,
+  /\brm\s+(-[a-z]*[rf][a-z]*\s+|--recursive\b)/i,
+  /\bformat(\.com)?\b[^|;&]*\s[a-z]:/i, /\bformat-volume\b/i,
+  /remove-item\b(?=[^|;&]*-r(ec(urse)?)?\b)(?=[^|;&]*-fo(rce)?\b)/i,
+  /\breg(\.exe)?\s+delete\b/i,
+  /\bshutdown\b/i, /\brestart-computer\b/i, /\bmkfs\b/i, /\bdiskpart\b/i, /\bbcdedit\b/i,
+  /\brobocopy\b[^|;&]*\/mir\b/i,
 ];
 export function scanRisk(command: string): string[] {
   return DESTRUCTIVE_PATTERNS.filter((re) => re.test(command)).map((re) => re.source);
@@ -18,9 +23,7 @@ export function isPathWithin(child: string, parent: string): boolean {
 export function checkWhitelist(workingDir: string, whitelist: string[]): boolean {
   return whitelist.some((dir) => isPathWithin(workingDir, path.resolve(dir)));
 }
-// 判定含 {{ 未渲染变量或未开启自动批准 → 需人工确认(规格 §10.2:AI 生成命令必须过目)
-export function confirmRequired(stepDef: { command?: string }, executor: { autoApprove: boolean }): boolean {
-  // 调用方(Task 10)可传渲染前模板命令或渲染后命令,{{ 检查对两者皆有效:渲染会替换掉 token
-  const dynamic = /\{\{/.test(stepDef.command ?? "");
-  return !executor.autoApprove || dynamic;
+/** 须传【未渲染】的模板命令:渲染后 {{ 消失,含 AI 产出变量的命令会被漏放行,违反规格 §10.2.2(AI 生成命令必须人工过目)。 */
+export function confirmRequired(commandTemplate: string | undefined, executor: { autoApprove: boolean }): boolean {
+  return !executor.autoApprove || /\{\{/.test(commandTemplate ?? "");
 }
