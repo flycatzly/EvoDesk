@@ -3,19 +3,21 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { executors, providerProfiles } from "@/lib/db/schema";
 
-type Executor = typeof executors.$inferSelect;
-type Profile = typeof providerProfiles.$inferSelect;
+// 行类型:apiKeyRef 放宽为 string | null —— 服务端页在 props 边界把 plain: 折叠为 "plain"/null(掩码后形状)
+type Executor = Omit<typeof executors.$inferSelect, "apiKeyRef"> & { apiKeyRef: string | null };
+type Profile = Omit<typeof providerProfiles.$inferSelect, "apiKeyRef"> & { apiKeyRef: string | null };
 
 const ROLE_LABEL: Record<string, string> = { triage: "分诊", planner: "规划", executor: "执行", reviewer: "审查", evolution: "复盘" };
 // 档位→角色默认映射:opus 规划、sonnet/primary 执行、haiku 分诊
 const TIER_ROLE: Record<string, string> = { opus: "planner", sonnet: "executor", haiku: "triage", primary: "executor" };
 
-// §10.3 密钥掩码:任何情况下不把密钥材料渲染进 DOM。plain: 只提示"已存",env: 仅回显变量名(无泄漏)
+// §10.3 密钥掩码:服务端已在 props 边界掩码(见 app/executors/page.tsx),这里只可能收到
+// env:NAME(不含秘密,原样回显)、裸词 "plain"(只提示"已存")或 null;其余前缀一律不回显兜底
 function keyHint(ref: string | null): string | null {
   if (!ref) return null;
   if (ref.startsWith("env:")) return ref;
-  if (ref.startsWith("plain:")) return "本地已存密钥 🔒";
-  return null; // 未知前缀一律不回显
+  if (ref === "plain") return "本地已存密钥 🔒";
+  return null;
 }
 
 function parseCandidates(raw: string): { model: string; tier: string }[] {
