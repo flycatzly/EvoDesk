@@ -4,7 +4,7 @@ import path from "node:path";
 import { getDb } from "@/lib/db/client";
 import { settings, stepRuns as stepRunsTable, tasks as tasksTable, executors as executorsTable } from "@/lib/db/schema";
 import {
-  getRun, getSteps, getStepDefsForRun, getCurrentStep, syncRunStatus, RunError,
+  getRun, getSteps, getStepDefsForRun, getCurrentStep, syncRunStatus, persistStepTerminal, RunError,
   approveCheckpoint, rejectCheckpoint, retryStep, manualOverrideStep, skipStep,
 } from "@/lib/domain/runner";
 import { renderPrompt } from "@/lib/domain/executor-resolve";
@@ -91,16 +91,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // script 真执行:置 running → spawn 落地 → done/failed(超时/退出码)→ sync 后响应
   async function runScriptAndRespond(command: string, ex: { shell: string | null; timeoutMs: number }, workingDir: string) {
+    // running 标记是执行前置写,非终态,留在内联
     db.update(stepRunsTable).set({ status: "running", input: command, startedAt: new Date().toISOString() }).where(and(eq(stepRunsTable.runId, runId), eq(stepRunsTable.stepIndex, stepIndex))).run();
     syncRunStatus(db, runId);
     const r = await executeScript(ex.shell ?? "powershell", command, { cwd: workingDir, timeoutMs: ex.timeoutMs });
     const ok = !r.timedOut && r.exitCode === 0;
-    db.update(stepRunsTable).set({
+    // 终态统一走 persistStepTerminal(内部已 syncRunStatus)
+    persistStepTerminal(db, runId, stepIndex, {
       status: ok ? "done" : "failed", output: r.output,
       error: ok ? null : (r.timedOut ? `执行超时(${ex.timeoutMs}ms)` : `退出码 ${r.exitCode ?? "unknown"}`),
       durationMs: r.durationMs, finishedAt: new Date().toISOString(),
-    }).where(and(eq(stepRunsTable.runId, runId), eq(stepRunsTable.stepIndex, stepIndex))).run();
-    syncRunStatus(db, runId);
+    });
     return respond();
   }
 }
