@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getDb } from "@/lib/db/client";
 import { tasks, projects } from "@/lib/db/schema";
 import { ProjectFilter, StatusButton } from "@/components/BoardActions";
@@ -17,6 +18,9 @@ const NEXT_ACTIONS: Record<string, { to: string; label: string }[]> = {
   review: [{ to: "done", label: "通过完成" }, { to: "canceled", label: "取消" }],
   waiting_human: [{ to: "ready", label: "退回就绪" }],
 };
+
+// 这些状态有执行视图(运行中/待人工/评审实时推进,done 可看历史留痕),卡片标题可点进详情。
+const LINKABLE_STATUSES = new Set(["ready", "running", "waiting_human", "review", "done"]);
 
 export default async function BoardPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const { project } = await searchParams;
@@ -39,7 +43,11 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
               <div className="text-sm font-semibold mb-2">{col.label} <span style={{ color: "var(--muted)" }}>{list.length}</span></div>
               {list.map((t) => (
                 <div key={t.id} id={`task-${t.id}`} className="surface p-3 mb-2">
-                  <div className="text-sm">{t.title}</div>
+                  <div className="text-sm">
+                    {LINKABLE_STATUSES.has(t.status)
+                      ? <Link href={`/tasks/${t.id}`} className="hover:underline" style={{ color: "var(--accent)" }}>{t.title}</Link>
+                      : t.title}
+                  </div>
                   <div className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
                     {t.complexity}
                     {t.dueDate ? ` · 截止 ${t.dueDate}` : ""}

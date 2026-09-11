@@ -1,5 +1,5 @@
 import type { Db } from "./test-util";
-import { flowTemplates, executors, projects, recurringRules, settings, tasks } from "./schema";
+import { flowTemplates, executors, projects, recurringRules, settings, tasks, chats } from "./schema";
 
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
@@ -16,10 +16,9 @@ const T = (name: string, complexity: string, tags: string[], steps: unknown[]) =
 export function seedIfEmpty(db: Db): void {
   const has = (db.select().from(tasks).all() as unknown[]).length > 0
     || (db.select().from(flowTemplates).all() as unknown[]).length > 0;
-  if (has) return;
 
   // 整体包在事务里:中途失败回滚,避免留下"非空但残缺"的种子数据使幂等守卫永远跳过补种。
-  db.transaction((tx) => {
+  if (!has) db.transaction((tx) => {
   // 模板步骤绑定的是角色(executorRole),运行时由执行引擎按角色解析到该角色下已启用的执行器 —— 种子里的模型执行器默认未启用。
   tx.insert(flowTemplates).values([
     T("S 轻量通道", "S", [], [
@@ -85,4 +84,19 @@ export function seedIfEmpty(db: Db): void {
     { key: "waiting_human_timeout_hours", value: "24" },
   ]).onConflictDoNothing().run();
   });
+
+  // —— 幂等补齐(独立于首播种子,老库升级也能拿到)——
+  const exRows = db.select().from(executors).all() as (typeof executors.$inferSelect)[];
+  if (!exRows.some((e) => e.name === "审查占位模型")) {
+    db.insert(executors).values({
+      id: id(), name: "审查占位模型", type: "llm", role: "reviewer", model: "YOUR_STRONG_MODEL",
+      apiBase: "https://api.openai.com/v1", protocol: "openai", apiKeyRef: "env:EVODESK_STRONG_KEY",
+      enabled: false, createdAt: now(),
+    }).run();
+  }
+  const chatCount = (db.select().from(chats).all() as unknown[]).length;
+  if (chatCount === 0) {
+    const nowIso = now();
+    db.insert(chats).values({ id: id(), title: "欢迎使用 EvoDesk 对话", createdAt: nowIso, updatedAt: nowIso }).run();
+  }
 }
