@@ -66,10 +66,15 @@ export function RunView({ taskId: _taskId, taskStatus, run, steps, stepDefs }: {
   const [risks, setRisks] = useState<string[]>([]);
   const [satisfaction, setSatisfaction] = useState(run.satisfaction ?? 0);
   const [outcome, setOutcome] = useState("");
-  const streamingRef = useRef(false); // 守卫 dev StrictMode 下 effect 双触发导致的重复 advance
+  // 去重并发触发的 effect(流进行中不重复 advance);dev StrictMode 卸载重挂会再触发一次,
+  // 属良性:llm execute 无副作用,stream 路由的条件 UPDATE 抢占保证单流,败者 409 走轮询恢复
+  const streamingRef = useRef(false);
   const pollActiveRef = useRef(false);
   const aliveRef = useRef(true);
-  useEffect(() => () => { aliveRef.current = false; }, []);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
+  }, []);
 
   const current = steps.find((s) => !STEP_TERMINAL.includes(s.status)) ?? null;
   const stepIndex = current?.stepIndex; // 提升为原始绑定:react-compiler 要求 deps 与推断依赖一致

@@ -24,10 +24,17 @@ export default async function TaskRunPage({ params }: { params: Promise<{ id: st
         {task.status} · {task.complexity} {run ? `· 流程:${template?.name ?? run.templateId}` : ""}
       </div>
       {task.description && <div className="surface p-3 text-sm mb-4 whitespace-pre-wrap">{task.description}</div>}
-      {run ? (
+      {run && !["canceled", "failed"].includes(run.status) ? (
         <RunView taskId={task.id} taskStatus={task.status} run={{ ...run }} steps={[...steps]} stepDefs={stepDefs} />
       ) : (
-        <StartButton taskId={task.id} disabled={task.status !== "ready"} />
+        <div className="flex flex-col items-start gap-1">
+          <StartButton taskId={task.id} disabled={task.status !== "ready"} />
+          {run && ["canceled", "failed"].includes(run.status) && (
+            <span className="text-xs" style={{ color: "var(--muted)" }}>
+              上次运行已{run.status === "canceled" ? "取消" : "失败"},可重新开始
+            </span>
+          )}
+        </div>
       )}
     </div>
   );

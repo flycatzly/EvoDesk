@@ -101,6 +101,13 @@ describe("POST /api/runs/[id]/steps/[n]/advance(llm 分支)", () => {
     expect(data.step.status).toBe("pending");
     expect(data.stream).toBe(`/api/runs/${runId}/steps/0/stream`);
   });
+  it("execute:步骤已在执行(步骤被置 running,如断连后回到页面)→ 409 该步骤正在执行(客户端轮询恢复契约)", async () => {
+    const runId = await startRun();
+    db.update(stepRuns).set({ status: "running", startedAt: new Date().toISOString() }).where(eq(stepRuns.id, stepOf(runId, 0).id)).run();
+    const res = await ADV(runId, 0, { action: "execute" });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain("该步骤正在执行");
+  });
   it("非当前步骤 → 409", async () => {
     const runId = await startRun();
     const res = await ADV(runId, 1, { action: "approve" });
