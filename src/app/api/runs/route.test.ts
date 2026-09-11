@@ -155,6 +155,24 @@ describe("POST /api/runs/[id]/steps/[n]/advance(script 分支)", () => {
     expect(data.step.status).toBe("done");
     expect(data.step.output).toContain("hi-static");
   });
+  it("confirm:执行器在等待期间被禁用 → 409(execute→confirm 间隙 TOCTOU 再校验)", async () => {
+    bindScriptTemplate("Write-Output hi-{{task.title}}");
+    const runId = await startRun();
+    await ADV(runId, 0, { action: "execute" });
+    db.update(executors).set({ enabled: false }).where(eq(executors.id, psExecutorId)).run();
+    const res = await ADV(runId, 0, { action: "confirm" });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain("不存在或未启用");
+  });
+  it("confirm:工作目录在等待期间被改出白名单 → 409(execute→confirm 间隙 TOCTOU 再校验)", async () => {
+    bindScriptTemplate("Write-Output hi-{{task.title}}");
+    const runId = await startRun();
+    await ADV(runId, 0, { action: "execute" });
+    db.update(executors).set({ workingDir: "C:\\Windows" }).where(eq(executors.id, psExecutorId)).run();
+    const res = await ADV(runId, 0, { action: "confirm" });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain("工作目录不在白名单");
+  });
 });
 
 describe("checkpoint 流程(approve / reject / feedback)", () => {
@@ -210,7 +228,7 @@ describe("POST /api/runs/[id]/cancel", () => {
 });
 
 describe("stale sweep(GET 时的进程中断自愈)", () => {
-  it("llm 步 running 超 120s → GET run 时标记 failed(进程中断)+ run waiting_human", async () => {
+  it("llm 步 running 超 150s → GET run 时标记 failed(进程中断)+ run waiting_human", async () => {
     const runId = await startRun();
     db.update(stepRuns).set({ status: "running", startedAt: new Date(Date.now() - 3 * 60_000).toISOString() }).where(eq(stepRuns.id, stepOf(runId, 0).id)).run();
     const res = await GET_RUN(req(`/api/runs/${runId}`), { params: Promise.resolve({ id: runId }) });

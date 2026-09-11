@@ -61,6 +61,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const ex = exOf();
       if (!ex || ex.type !== "script" || !ex.enabled) return NextResponse.json({ error: "script 执行器不存在或未启用" }, { status: 409 });
       const task = db.select().from(tasksTable).where(eq(tasksTable.id, run.taskId)).all()[0];
+      if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
       const prev = [...steps].reverse().find((s) => s.stepIndex < stepIndex);
       const command = renderPrompt(def.command ?? "", { task: { title: task.title, description: task.description }, prevOutput: prev?.output ?? "" });
       const whitelist = readWhitelist(db);
@@ -75,9 +76,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return await runScriptAndRespond(command, ex, workingDir);
     }
     if (action === "confirm" && step.status === "awaiting_confirmation") {
+      // TOCTOU 再校验:execute→confirm 间隙里执行器可能被禁用/工作目录被改出白名单,执行前重新过闸
       const ex = exOf();
-      if (!ex || ex.type !== "script") return NextResponse.json({ error: "script 执行器不存在" }, { status: 409 });
+      if (!ex || ex.type !== "script" || !ex.enabled) return NextResponse.json({ error: "script 执行器不存在或未启用" }, { status: 409 });
       const workingDir = ex.workingDir ? path.resolve(ex.workingDir) : path.resolve("data", "sandbox");
+      if (!checkWhitelist(workingDir, readWhitelist(db))) return NextResponse.json({ error: `工作目录不在白名单:${workingDir}` }, { status: 409 });
       return await runScriptAndRespond(String(step.input ?? ""), ex, workingDir);
     }
     if (action === "retry" && step.status === "failed") return guard(() => retryStep(db, runId, stepIndex));

@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, lt } from "drizzle-orm";
 import type { Db } from "@/lib/db/test-util";
-import { flowRuns, stepRuns, tasks, flowTemplates } from "@/lib/db/schema";
+import { flowRuns, stepRuns, tasks, flowTemplates, executors } from "@/lib/db/schema";
 import { canTransition, type TaskStatus } from "@/lib/domain/status";
 import { getStepDefs, type StepDef } from "@/lib/domain/step-def";
 import { executorLlmConfig, callLlmWithRetry } from "@/lib/llm/client";
@@ -58,10 +58,23 @@ export function syncRunStatus(db: Db, runId: string): void {
   const run = getRun(db, runId);
   if (!run || ["done", "failed", "canceled"].includes(run.status)) return;
   const nowIso = new Date().toISOString();
-  // 进程中断自愈:llm 步骤 running 超 120s 视为失败(callLlm 上限 30s×2 次 + 重试退避 < 61s)
-  const staleCutoff = new Date(Date.now() - 120_000).toISOString();
+  // 进程中断自愈(llm):须严格大于 streamLlm 的 120s abort(stream 路由依赖 abort 先于 sweep,勿单独调大其一)
+  const staleCutoff = new Date(Date.now() - 150_000).toISOString();
   db.update(stepRuns).set({ status: "failed", error: "执行进程中断,可重试或人工接管", finishedAt: nowIso })
     .where(and(eq(stepRuns.runId, runId), eq(stepRuns.status, "running"), eq(stepRuns.executorType, "llm"), lt(stepRuns.startedAt, staleCutoff))).run();
+  // 进程中断自愈(script):advance 的阻塞式 POST 崩溃/重启后 running 无恢复路径,按各步骤执行器超时 + 30s 宽限判定
+  const runningScripts = db.select().from(stepRuns).where(and(eq(stepRuns.runId, runId), eq(stepRuns.status, "running"), eq(stepRuns.executorType, "script"))).all() as (typeof stepRuns.$inferSelect)[];
+  if (runningScripts.length > 0) {
+    const defs = getStepDefsForRun(db, runId);
+    for (const s of runningScripts) {
+      const executorId = defs[s.stepIndex]?.executor_id;
+      const ex = executorId ? db.select().from(executors).where(eq(executors.id, executorId)).all()[0] as typeof executors.$inferSelect | undefined : undefined;
+      const cutoff = new Date(Date.now() - ((ex?.timeoutMs ?? 120_000) + 30_000)).toISOString();
+      if (s.startedAt && s.startedAt < cutoff) {
+        db.update(stepRuns).set({ status: "failed", error: "执行进程中断,可重试或人工接管", finishedAt: nowIso }).where(eq(stepRuns.id, s.id)).run();
+      }
+    }
+  }
   const cur = getCurrentStep(db, runId);
   if (!cur) {
     const steps = getSteps(db, runId);
