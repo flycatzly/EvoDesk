@@ -164,3 +164,49 @@ export const chatMessages = sqliteTable("chat_messages", {
   costUsd: real("cost_usd").notNull().default(0),
   createdAt: text("created_at").notNull(),
 });
+
+export const quickActions = sqliteTable("quick_actions", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("command"), // command|url|launch
+  payload: text("payload").notNull(), // command 模板 / url / JSON {profile_id, model?, workdir?}
+  shell: text("shell"),
+  icon: text("icon"),
+  sort: integer("sort").notNull().default(0),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull(),
+});
+
+export const quickActionRuns = sqliteTable("quick_action_runs", {
+  id: text("id").primaryKey(),
+  actionId: text("action_id").notNull(),
+  renderedPayload: text("rendered_payload").notNull(),
+  output: text("output"),
+  exitCode: integer("exit_code"),
+  status: text("status").notNull(), // ok|failed|timeout|canceled
+  durationMs: integer("duration_ms").notNull().default(0),
+  ts: text("ts").notNull(),
+});
+
+export const notes = sqliteTable("notes", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  body: text("body").notNull().default(""),
+  tags: text("tags").notNull().default("[]"),
+  pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+  source: text("source").notNull().default("manual"), // manual|chat|task|news_digest
+  taskId: text("task_id"),
+  vaultPath: text("vault_path"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const evolutionEvents = sqliteTable("evolution_events", {
+  id: text("id").primaryKey(),
+  ts: text("ts").notNull(),
+  kind: text("kind").notNull(), // variant_created|promoted|retired|analysis_run
+  templateId: text("template_id"),
+  relatedTemplateId: text("related_template_id"),
+  reason: text("reason").notNull().default(""),
+  detail: text("detail").notNull().default("{}"),
+});
