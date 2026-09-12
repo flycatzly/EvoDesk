@@ -102,7 +102,9 @@ describe("quick-actions CRUD", () => {
     const b = insertAction({ name: "B", enabled: false, sort: 0, createdAt: t1 });
     const c = insertAction({ name: "C", enabled: true, sort: 0, createdAt: t2 });
     const list = await (await GET(req("/api/quick-actions"))).json();
-    expect((list.actions as ActionRow[]).map((x) => x.id)).toEqual([c.id, a.id, b.id]);
+    // 种子含 2 条示例指令(beforeEach 的 seedIfEmpty 落库),只断言本用例插入三条的相对排序
+    const mine = (list.actions as ActionRow[]).map((x) => x.id).filter((id) => id === a.id || id === b.id || id === c.id);
+    expect(mine).toEqual([c.id, a.id, b.id]);
 
     for (let i = 0; i < 22; i++) {
       db.insert(quickActionRuns).values({

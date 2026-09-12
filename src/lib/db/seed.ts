@@ -1,5 +1,5 @@
 import type { Db } from "./test-util";
-import { flowTemplates, executors, projects, recurringRules, settings, tasks, chats } from "./schema";
+import { flowTemplates, executors, projects, recurringRules, settings, tasks, chats, quickActions } from "./schema";
 
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
@@ -98,5 +98,13 @@ export function seedIfEmpty(db: Db): void {
   if (chatCount === 0) {
     const nowIso = now();
     db.insert(chats).values({ id: id(), title: "欢迎使用 EvoDesk 对话", createdAt: nowIso, updatedAt: nowIso }).run();
+  }
+  const qaCount = (db.select().from(quickActions).all() as unknown[]).length;
+  if (qaCount === 0) {
+    const n = now();
+    db.insert(quickActions).values([
+      { id: id(), name: "打开 Z.ai 控制台", type: "url", payload: "https://chat.z.ai", sort: 0, enabled: true, createdAt: n },
+      { id: id(), name: "查看沙盒目录", type: "command", payload: "Get-ChildItem data/sandbox", shell: "powershell", sort: 1, enabled: true, createdAt: n },
+    ]).run();
   }
 }

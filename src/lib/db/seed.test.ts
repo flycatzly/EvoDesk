@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createTestDb } from "./test-util";
 import { seedIfEmpty } from "./seed";
-import { tasks, projects, flowTemplates, executors, recurringRules, settings, chats } from "./schema";
+import { tasks, projects, flowTemplates, executors, recurringRules, settings, chats, quickActions } from "./schema";
 
 describe("seedIfEmpty", () => {
   it("首播:4 模板/5 执行器/2 项目/2 规则/5 示例任务/示例会话/设置;幂等:再跑不增", () => {
@@ -49,5 +49,14 @@ describe("seedIfEmpty", () => {
     const ex = db.select().from(executors).all() as (typeof executors.$inferSelect)[];
     expect(ex.some((e) => e.name === "审查占位模型")).toBe(true);
     expect((db.select().from(chats).all() as unknown[]).length).toBe(1);
+  });
+  it("幂等补齐:快捷指令种子(url + command),double-seed 后恰 2 条", () => {
+    const db = createTestDb();
+    seedIfEmpty(db);
+    seedIfEmpty(db);
+    const qa = db.select().from(quickActions).all() as (typeof quickActions.$inferSelect)[];
+    expect(qa.length).toBe(2);
+    expect(qa.filter((a) => a.type === "url" && a.payload === "https://chat.z.ai").length).toBe(1);
+    expect(qa.filter((a) => a.type === "command" && a.payload === "Get-ChildItem data/sandbox" && a.shell === "powershell").length).toBe(1);
   });
 });
