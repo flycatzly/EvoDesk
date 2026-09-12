@@ -222,11 +222,16 @@ DETAIL_JS = """(function(){
 def extract_jobs(payload: str, fetch_city: str) -> list:
     data = json.loads(payload)
     if data.get("fetchError"):
-        raise RuntimeError(f"页面内请求失败:{data['fetchError']}")
+        raise RuntimeError(
+            "页面内 XHR 请求失败(常见原因:未登录 / 被风控拦截 / 网络异常)。"
+            "请先执行 --setup-chrome,在弹出的专用浏览器里登录 zhipin.com,再重新抓取。"
+        )
     if data.get("code") not in (0, None):
         code = data.get("code")
-        if code == 101600 or code == 1001:
-            raise RuntimeError("登录态失效或触发风控,请在 BOSS 专用 Chrome 里重新登录")
+        if code in (101600, 1001, 1002):
+            raise RuntimeError(
+                "登录态失效或触发风控(code=%s):请在 BOSS 专用 Chrome 里重新登录 zhipin.com 后重试" % code
+            )
         raise RuntimeError(f"搜索 API 返回异常 code={code} msg={data.get('message', '')}")
     zpData = data.get("zpData", {})
     out = []
@@ -389,6 +394,16 @@ def cmd_scrape(args) -> None:
     ws, _ = open_zhipin_tab()
     all_jobs: dict = {}
     try:
+        # 登录预检:第一页请求失败立即给出行动指引,不产生半截 traceback
+        try:
+            probe = ws.evaluate(
+                SEARCH_JS.replace("__KW__", args.keyword).replace("__CITY__", city_code).replace("__PAGE__", "1"),
+                timeout=30)
+            extract_jobs(probe, args.city)  # 仅校验,不入库
+        except RuntimeError as e:
+            warn(str(e))
+            log("修复步骤:① 点「启动 Chrome」→ ② 在弹出的浏览器窗口登录 zhipin.com → ③ 回本页点「连通自检」→ ④ 重新抓取")
+            sys.exit(2)
         for page in range(1, pages + 1):
             raw = ws.evaluate(
                 SEARCH_JS.replace("__KW__", args.keyword).replace("__CITY__", city_code).replace("__PAGE__", str(page)),
