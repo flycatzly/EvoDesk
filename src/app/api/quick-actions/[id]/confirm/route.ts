@@ -5,7 +5,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { quickActions, quickActionRuns, providerProfiles } from "@/lib/db/schema";
 import { renderQuickPayload, runCommandAction, resolveWorkingDir } from "@/lib/domain/quick-actions";
-import { spawnClaude, sanitizeModelName, isValidModelName } from "@/lib/domain/launch";
+import { spawnClaude, sanitizeModelName, isValidModelName, sweepStaleSettings } from "@/lib/domain/launch";
 import { resolveApiKey } from "@/lib/llm/client";
 
 export const runtime = "nodejs";
@@ -36,6 +36,7 @@ function recordRun(db: ReturnType<typeof getDb>, run: Omit<typeof quickActionRun
 }
 
 export async function POST(req: NextRequest, { params }: Params) {
+  sweepStaleSettings(); // 崩溃残留兜底:fire-and-forget,不影响本次执行
   const { id } = await params;
   const db = getDb();
   const action = db.select().from(quickActions).where(eq(quickActions.id, id)).all()[0];

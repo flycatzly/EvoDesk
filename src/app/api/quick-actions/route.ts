@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { quickActions, quickActionRuns } from "@/lib/db/schema";
+import { sweepStaleSettings } from "@/lib/domain/launch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,7 @@ const TYPES = ["command", "url", "launch"] as const;
 const SHELLS = ["powershell", "cmd", "bash", "python"] as const;
 
 export async function GET(_req: NextRequest) {
+  sweepStaleSettings(); // 崩溃残留兜底:fire-and-forget,不阻塞列表返回
   const db = getDb();
   const rows = db.select().from(quickActions).all();
   // enabled 排前 → sort asc → createdAt asc

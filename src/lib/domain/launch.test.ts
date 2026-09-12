@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { sanitizeModelName, buildLaunchSettings, spawnClaude, isValidModelName } from "./launch";
+import { sanitizeModelName, buildLaunchSettings, spawnClaude, isValidModelName, sweepStaleSettings } from "./launch";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 
 // 测试产生的临时 settings 文件(含假密钥),每个用例后清理
 const cleanup: string[] = [];
@@ -88,5 +89,36 @@ describe("spawnClaude", () => {
     expect(r.status).toBe("ok");
     expect(r.detail).not.toContain("--model");
     expect(r.detail).toContain("工作目录:D:\\work");
+  });
+});
+
+describe("sweepStaleSettings", () => {
+  it("超龄 launch-*.json 删除、新鲜文件保留,返回删除数", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "evodesk-sweep-"));
+    const oldFile = path.join(dir, "launch-old.json");
+    const freshFile = path.join(dir, "launch-fresh.json");
+    fs.writeFileSync(oldFile, "{}");
+    fs.writeFileSync(freshFile, "{}");
+    const past = new Date(Date.now() - 10 * 60_000); // 10 分钟前 → 超过默认 5 分钟
+    fs.utimesSync(oldFile, past, past);
+    try {
+      const removed = sweepStaleSettings(5 * 60_000, dir);
+      expect(removed).toBe(1);
+      expect(fs.existsSync(oldFile)).toBe(false);
+      expect(fs.existsSync(freshFile)).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it("非 launch-*.json 不清扫;目录不存在 → 返回 0 不抛错", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "evodesk-sweep2-"));
+    fs.writeFileSync(path.join(dir, "other.json"), "{}");
+    try {
+      expect(sweepStaleSettings(5 * 60_000, dir)).toBe(0);
+      expect(fs.existsSync(path.join(dir, "other.json"))).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    expect(sweepStaleSettings(5 * 60_000, path.join(os.tmpdir(), "evodesk-no-such-dir-qa"))).toBe(0);
   });
 });

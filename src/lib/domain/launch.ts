@@ -30,8 +30,7 @@ export function buildLaunchSettings(raw: string, model: string | null): string {
   return file;
 }
 
-export function spawnClaude(settingsPath: string, model: string | null, workdir: string, dryRun: boolean): Promise<{ status: "ok" | "failed"; detail: string }> {
-  // 防注入:spawn 带 shell:true 时参数经 cmd.exe 拼接,模型名若含 & | ; 等元字符即可执行任意命令
+export function spawnClaude(settingsPath: string, model: string | null, workdir: string, dryRun: boolean): Promise<{ status: "ok" | "failed"; detail: string }> {  // 防注入:spawn 带 shell:true 时参数经 cmd.exe 拼接,模型名若含 & | ; 等元字符即可执行任意命令
   // (模型名来自导入的 profile / 用户 payload)。白名单校验对 dryRun 也生效(fail closed):
   // 预览不得把不可安全执行的命令当作可运行命令展示。校验先于预检,非法名绝不触发 spawn。
   if (model && !isValidModelName(model)) {
@@ -58,4 +57,19 @@ export function spawnClaude(settingsPath: string, model: string | null, workdir:
     child.on("error", (e) => resolve({ status: "failed", detail: String(e).slice(0, 200) }));
     child.on("spawn", () => { child.unref(); resolve({ status: "ok", detail: "已启动新终端窗口" }); });
   });
+}
+
+/** 清扫残留的含密钥临时 settings(进程崩溃错过 1s 删除时兜底);由 quick-actions 路由在 GET/confirm 时调用。 */
+export function sweepStaleSettings(maxAgeMs = 5 * 60_000, dir = path.join(process.cwd(), "data", "generated")): number {
+  let removed = 0;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.startsWith("launch-") || !f.endsWith(".json")) continue;
+      const p = path.join(dir, f);
+      try {
+        if (Date.now() - fs.statSync(p).mtimeMs > maxAgeMs) { fs.rmSync(p, { force: true }); removed++; }
+      } catch { /* 单文件失败忽略 */ }
+    }
+  } catch { /* 目录不存在 */ }
+  return removed;
 }
