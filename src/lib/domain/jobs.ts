@@ -125,13 +125,15 @@ export type SpawnOptions = {
   args: string[];
   db: Db;
   params?: Record<string, unknown>;
+  /** 测试注入用:覆盖默认脚本路径 */
+  scriptPath?: string;
 };
 
 /** 启动脚本进程,stdout 增量累积;结束时按 RESULT: 行入库(仅 scrape) */
-export function spawnJobsScript({ kind, args, db, params = {} }: SpawnOptions): { runId: string } | { error: string } {
+export function spawnJobsScript({ kind, args, db, params = {}, scriptPath: scriptOverride }: SpawnOptions): { runId: string } | { error: string } {
   sweepStaleRuns(db);
   if (currentRun()) return { error: "已有任务在运行,请等待完成或查看运行记录" };
-  const scriptPath = path.join(process.cwd(), "scripts", "boss_cdp_raw.py");
+  const scriptPath = scriptOverride ?? path.join(process.cwd(), "scripts", "boss_cdp_raw.py");
   if (!fs.existsSync(scriptPath)) return { error: "缺少 scripts/boss_cdp_raw.py" };
   const kv = readSettingsKv(db);
   const pythonCmd = typeof kv.boss_python_cmd === "string" && kv.boss_python_cmd.trim() ? kv.boss_python_cmd.trim() : "python";
@@ -140,7 +142,12 @@ export function spawnJobsScript({ kind, args, db, params = {} }: SpawnOptions): 
   const runId = crypto.randomUUID();
   db.insert(jobsRuns).values({ id: runId, kind, params: JSON.stringify(params), status: "running", output: "", jobCount: 0, startedAt: nowIso, finishedAt: null }).run();
 
-  const child = spawn(pythonCmd, [scriptPath, ...args], { shell: process.platform === "win32", env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+  // 不经 shell:参数数组原样传递,libuv 负责给含空格的参数(如 --keyword "AI Agent")加引号;
+  // shell:true 会把空格参数手动拼接进命令行,导致 "AI Agent" 被拆成两个 argv(回归根因)。
+  const child = spawn(pythonCmd, [scriptPath, ...args], {
+    windowsHide: true,
+    env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+  });
   const running: Running = { child, runId, output: "", startedAt: Date.now() };
   global_.__evodeskJobsRun = running;
 

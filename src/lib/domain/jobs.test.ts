@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createTestDb } from "@/lib/db/test-util";
 import { seedIfEmpty } from "@/lib/db/seed";
-import { jobs } from "@/lib/db/schema";
+import { jobs, settings as settingsTable } from "@/lib/db/schema";
 import { parseScriptResult, sanitizeJob, upsertJobs, jobsToCsv, MAX_PAGES } from "./jobs";
 
 let db: ReturnType<typeof createTestDb>;
@@ -48,4 +48,28 @@ describe("jobsToCsv", () => {
 
 it("MAX_PAGES 上限 10", () => {
   expect(MAX_PAGES).toBe(10);
+});
+
+describe("spawnJobsScript(真实进程集成)", () => {
+  it("含空格的参数作为单个 argv 到达脚本(回归:shell 拼接把 'AI Agent' 拆成两个参数)", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const pathMod = await import("node:path");
+    const { spawnJobsScript, currentRun } = await import("./jobs");
+    // 用 node 本身当"解释器",脚本回显收到的第一个参数,证明空格参数未被拆分
+    const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), "jobs-spawn-"));
+    const script = pathMod.join(dir, "echo-argv.cjs");
+    fs.writeFileSync(script, 'console.log("KW=" + JSON.stringify(process.argv[3]));\n');
+    db.insert(settingsTable).values({ key: "boss_python_cmd", value: JSON.stringify(process.execPath) }).onConflictDoUpdate({ target: settingsTable.key, set: { value: JSON.stringify(process.execPath) } }).run();
+    const out = spawnJobsScript({ kind: "check", args: ["--keyword", "AI Agent", "--city", "上海"], db, scriptPath: script });
+    expect("error" in out).toBe(false);
+    // 等待进程退出落库(轮询,最长 5s)
+    for (let i = 0; i < 50; i++) {
+      if (!currentRun()) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const run = (db.select().from((await import("@/lib/db/schema")).jobsRuns).all() as { status: string; output: string }[])[0];
+    expect(run.status).toBe("ok");
+    expect(run.output).toContain('KW="AI Agent"');
+  });
 });
