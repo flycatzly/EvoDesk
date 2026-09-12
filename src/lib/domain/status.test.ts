@@ -23,4 +23,14 @@ describe("task status machine", () => {
     expect(canTransition("waiting_human", "review")).toBe(true);
     expect(canTransition("archived", "done")).toBe(false);
   });
+  it("勾选完成:inbox/triaging/ready → done 合法;done → ready 恢复合法", () => {
+    expect(canTransition("inbox", "done")).toBe(true);
+    expect(canTransition("triaging", "done")).toBe(true);
+    expect(canTransition("ready", "done")).toBe(true);
+    expect(canTransition("done", "ready")).toBe(true);
+  });
+  it("running/waiting_human 不可直达 done(防孤儿 flow_run)", () => {
+    expect(canTransition("running", "done")).toBe(false);
+    expect(canTransition("waiting_human", "done")).toBe(false);
+  });
 });

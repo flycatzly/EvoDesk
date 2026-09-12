@@ -70,8 +70,18 @@ describe("collectWidgetData", () => {
     const bundle = collectWidgetData(db, ["goals"], "", NOW);
     expect(bundle.goals!.goals.every((g) => g.title !== "已归档")).toBe(true);
   });
-  it("links 段限量:分类数与每类条数截断,total 仍返回全量(大书签库不撑爆首页)", () => {
+  it("todo 段:今日完成的任务保留在清单末尾(可取消勾选),逾期只列未完成", () => {
     const db = createTestDb();
+    seedIfEmpty(db);
+    addTask(db, { title: "已完成的今日事", status: "done", dueDate: "2026-09-12" });
+    const bundle = collectWidgetData(db, ["todo"], "Asia/Shanghai", NOW);
+    const titles = bundle.todo!.tasks.map((t) => t.title);
+    expect(titles).toContain("已完成的今日事");
+    expect(titles[titles.length - 1]).toBe("已完成的今日事"); // 排在未完成之后
+    const done = bundle.todo!.tasks.find((t) => t.title === "已完成的今日事")!;
+    expect(done.status).toBe("done");
+  });
+  it("links 段限量:分类数与每类条数截断,total 仍返回全量(大书签库不撑爆首页)", () => {    const db = createTestDb();
     seedIfEmpty(db);
     db.delete(links).run();
     const n = now();

@@ -60,6 +60,13 @@ describe("canvases api", () => {
     expect(JSON.parse(updated.layout)).toEqual(GOOD_LAYOUT);
     expect((await PUT(req(`/api/canvases/${canvas.id}`, { method: "PUT", body: JSON.stringify({ layout: { bad: 1 } }) }), { params: Promise.resolve({ id: canvas.id }) })).status).toBe(400);
   });
+  it("PUT 模板画布返回 400(种子内容不可改写)", async () => {
+    const now = new Date().toISOString();
+    db.insert(canvases).values({ id: "tpl1", name: "模板", columns: "2", locked: false, isTemplate: true, shareToken: null, layout: "[]", createdAt: now, updatedAt: now }).run();
+    const res = await PUT(req(`/api/canvases/tpl1`, { method: "PUT", body: JSON.stringify({ name: "篡改" }) }), { params: Promise.resolve({ id: "tpl1" }) });
+    expect(res.status).toBe(400);
+    expect(((await json(res)) as { canvas?: { name: string } }).canvas).toBeUndefined();
+  });
   it("DELETE 删除画布;模板不可删", async () => {
     const now = new Date().toISOString();
     db.insert(canvases).values({ id: "tpl1", name: "模板", columns: "2", locked: false, isTemplate: true, shareToken: null, layout: "[]", createdAt: now, updatedAt: now }).run();
@@ -67,15 +74,25 @@ describe("canvases api", () => {
     expect((await DELETE(req(`/api/canvases/tpl1`, { method: "DELETE" }), { params: Promise.resolve({ id: "tpl1" }) })).status).toBe(400);
     expect((await DELETE(req(`/api/canvases/${canvas.id}`, { method: "DELETE" }), { params: Promise.resolve({ id: canvas.id }) })).status).toBe(200);
   });
-  it("share 生成 16hex token;revoke 吊销;by-token 命中/404", async () => {
+  it("share 生成 16hex token;重复 POST 幂等返回同一 token;rotate 换新;revoke 吊销;by-token 命中/404", async () => {
     const { canvas } = await newCanvas({ name: "share-me" });
-    const { shareToken } = await json(await share(req(`/api/canvases/${canvas.id}/share`, { method: "POST" }), { params: Promise.resolve({ id: canvas.id }) })) as { shareToken: string };
+    const shareAt = () => req(`/api/canvases/${canvas.id}/share`, { method: "POST" });
+    const { shareToken } = await json(await share(shareAt(), { params: Promise.resolve({ id: canvas.id }) })) as { shareToken: string };
     expect(shareToken).toMatch(/^[0-9a-f]{16}$/);
-    const hit = await json(await byToken(req(`/api/canvases/by-token/${shareToken}`), { params: Promise.resolve({ token: shareToken }) })) as { canvas: { name: string; layout: string } };
+    // 再点一次「分享」= 查看链接:返回同一 token,旧分享链接不断
+    const again = await json(await share(shareAt(), { params: Promise.resolve({ id: canvas.id }) })) as { shareToken: string };
+    expect(again.shareToken).toBe(shareToken);
+    // ?rotate=1 显式换新
+    const rotated = await json(await share(req(`/api/canvases/${canvas.id}/share?rotate=1`, { method: "POST" }), { params: Promise.resolve({ id: canvas.id }) })) as { shareToken: string };
+    expect(rotated.shareToken).not.toBe(shareToken);
+    expect((await byToken(req(`/api/canvases/by-token/${rotated.shareToken}`), { params: Promise.resolve({ token: rotated.shareToken }) })).status).toBe(200);
+    // 旧 token 已失效
+    expect((await byToken(req(`/api/canvases/by-token/${shareToken}`), { params: Promise.resolve({ token: shareToken }) })).status).toBe(404);
+    const hit = await json(await byToken(req(`/api/canvases/by-token/${rotated.shareToken}`), { params: Promise.resolve({ token: rotated.shareToken }) })) as { canvas: { name: string; layout: string } };
     expect(hit.canvas.name).toBe("share-me");
     expect(hit.canvas).not.toHaveProperty("locked"); // 只暴露展示字段
     await share(req(`/api/canvases/${canvas.id}/share?revoke=1`, { method: "POST" }), { params: Promise.resolve({ id: canvas.id }) });
-    expect((await byToken(req(`/api/canvases/by-token/${shareToken}`), { params: Promise.resolve({ token: shareToken }) })).status).toBe(404);
+    expect((await byToken(req(`/api/canvases/by-token/${rotated.shareToken}`), { params: Promise.resolve({ token: rotated.shareToken }) })).status).toBe(404);
     expect((await byToken(req(`/api/canvases/by-token/deadbeef`), { params: Promise.resolve({ token: "deadbeef" }) })).status).toBe(404);
   });
 });

@@ -16,6 +16,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const db = getDb();
+  const existing = db.select().from(canvases).where(eq(canvases.id, id)).all()[0];
+  if (!existing) return NextResponse.json({ error: "画布不存在" }, { status: 404 });
+  if (existing.isTemplate) return NextResponse.json({ error: "内置模板不可修改" }, { status: 400 });
   const raw = await req.json().catch(() => null);
   const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const patch: Partial<typeof canvases.$inferInsert> = {};
@@ -29,10 +33,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (typeof body.locked === "boolean") patch.locked = body.locked;
   if (Object.keys(patch).length === 0) return NextResponse.json({ error: "无可更新字段" }, { status: 400 });
   patch.updatedAt = new Date().toISOString();
-  const db = getDb();
   db.update(canvases).set(patch).where(eq(canvases.id, id)).run();
   const row = db.select().from(canvases).where(eq(canvases.id, id)).all()[0];
-  if (!row) return NextResponse.json({ error: "画布不存在" }, { status: 404 });
   return NextResponse.json({ canvas: row });
 }
 

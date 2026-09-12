@@ -5,6 +5,9 @@ import type { TaskLite } from "@/lib/domain/canvas-data";
 
 const PRIORITY_COLOR: Record<number, string> = { 3: "var(--danger)", 2: "var(--warn)" };
 
+// 流程执行中的任务不能勾选直达 done(状态机禁止:有活跃 flow_run,须在执行视图完成/取消)
+const IN_FLOW: ReadonlySet<string> = new Set(["running", "waiting_human"]);
+
 // 待办勾选清单:点击完成/恢复,乐观更新 + router.refresh 同步服务端计数
 export function TodoChecklist({ tasks }: { tasks: TaskLite[] }) {
   const router = useRouter();
@@ -34,7 +37,8 @@ export function TodoChecklist({ tasks }: { tasks: TaskLite[] }) {
           <input
             type="checkbox"
             checked={t.status === "done"}
-            disabled={busyId === t.id}
+            disabled={busyId === t.id || IN_FLOW.has(t.status)}
+            title={IN_FLOW.has(t.status) ? "流程执行中,请到执行视图完成或取消" : undefined}
             onChange={() => toggle(t)}
             className="shrink-0"
             aria-label={`完成:${t.title}`}

@@ -35,7 +35,15 @@ describe("PATCH /api/tasks/[id]", () => {
     const data = await res.json();
     expect(data.task.status).toBe("ready");
   });
-  it("非法流转 inbox→done 返回 422", async () => {
+  it("勾选完成:inbox→done 合法(今日清单);done→ready 取消勾选恢复", async () => {
+    const res = await PATCH(req(`/api/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status: "done" }) }), { params: Promise.resolve({ id: taskId }) });
+    expect(res.status).toBe(200);
+    const back = await PATCH(req(`/api/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status: "ready" }) }), { params: Promise.resolve({ id: taskId }) });
+    expect((await back.json()).task.status).toBe("ready");
+  });
+  it("非法流转 running→done 返回 422(活跃 flow_run 不允许直达完成)", async () => {
+    await PATCH(req(`/api/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status: "ready" }) }), { params: Promise.resolve({ id: taskId }) });
+    await PATCH(req(`/api/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status: "running" }) }), { params: Promise.resolve({ id: taskId }) });
     const res = await PATCH(req(`/api/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status: "done" }) }), { params: Promise.resolve({ id: taskId }) });
     expect(res.status).toBe(422);
   });

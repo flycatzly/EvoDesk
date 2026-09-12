@@ -109,6 +109,8 @@ export function collectWidgetData(db: Db, types: WidgetType[], timezone?: string
   const active = allTasks.filter((t) => !["done", "archived", "canceled"].includes(t.status));
   const overdue = active.filter((t) => t.dueDate && t.dueDate < todayStr).sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1));
   const dueToday = active.filter((t) => t.dueDate === todayStr);
+  // 今日清单保留"今日已完成"(划线可取消勾选);逾期/今日截止仍只列未完成
+  const doneToday = allTasks.filter((t) => t.status === "done" && t.dueDate === todayStr);
   const projectRows = (db.select().from(projects).all() as (typeof projects.$inferSelect)[]).filter((p) => !p.archived);
   const projectName = (id: string | null) => projectRows.find((p) => p.id === id)?.name ?? null;
   const toLite = (t: typeof tasks.$inferSelect): TaskLite => ({
@@ -134,7 +136,7 @@ export function collectWidgetData(db: Db, types: WidgetType[], timezone?: string
     };
   }
   if (wanted.has("todo")) {
-    bundle.todo = { tasks: [...overdue, ...dueToday].map(toLite) };
+    bundle.todo = { tasks: [...overdue, ...dueToday, ...doneToday].map(toLite) };
   }
   if (wanted.has("calendar")) {
     // 当月逐日任务数(dueDate 为 yyyy-mm-dd,直接按前缀聚合计数)
