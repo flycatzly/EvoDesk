@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db/client";
 import { readSettingsKv } from "@/lib/db/read-settings";
 import { SettingsForm } from "@/components/SettingsForm";
 import { ThemePicker } from "@/components/ThemePicker";
+import { BackupForm } from "@/components/BackupForm";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,9 @@ export default function SettingsPage() {
         <span className="text-xs" style={{ color: "var(--muted)" }}>7 套预设即时生效,保存在浏览器;重要数据请定期在下方备份。</span>
       </div>
       <SettingsForm initial={kv} />
+      <div className="mt-4">
+        <BackupForm />
+      </div>
     </div>
   );
 }
