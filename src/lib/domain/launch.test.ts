@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { sanitizeModelName, buildLaunchSettings, spawnClaude } from "./launch";
+import { sanitizeModelName, buildLaunchSettings, spawnClaude, isValidModelName } from "./launch";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -45,7 +45,36 @@ describe("buildLaunchSettings", () => {
   });
 });
 
+describe("isValidModelName", () => {
+  it("合法字符(字母数字 . _ : @ -)通过", () => {
+    expect(isValidModelName("claude-sonnet-4.5")).toBe(true);
+    expect(isValidModelName("deepseek_chat:v3.1@2024")).toBe(true);
+  });
+  it("shell 元字符/空格/空串拒绝", () => {
+    expect(isValidModelName("x & calc.exe")).toBe(false);
+    expect(isValidModelName("a|b")).toBe(false);
+    expect(isValidModelName("a;b")).toBe(false);
+    expect(isValidModelName("model name")).toBe(false);
+    expect(isValidModelName("")).toBe(false);
+  });
+});
+
 describe("spawnClaude", () => {
+  it("非法模型名 → failed 含 非法字符(dryRun 也 fail closed)", async () => {
+    const r = await spawnClaude("C:\\tmp\\settings.json", "x & echo hacked", "D:\\work", true);
+    expect(r.status).toBe("failed");
+    expect(r.detail).toContain("非法字符");
+    expect(r.detail).toContain("x & echo hacked");
+  });
+  it("非法模型名真实路径 → failed,校验先于 spawn/预检,不触发执行", async () => {
+    const r = await spawnClaude("C:\\tmp\\settings.json", "a & b", "D:\\work", false);
+    expect(r.status).toBe("failed");
+    expect(r.detail).toContain("非法字符");
+  });
+  it("dryRun 不做 claude.cmd 预检(环境无关;真实 spawn 的预检路径需 mock 才能测,此处不测)", async () => {
+    const r = await spawnClaude("C:\\tmp\\settings.json", null, "D:\\work", true);
+    expect(r.status).toBe("ok");
+  });
   it("dryRun 返回命令预览,不真正开窗", async () => {
     const r = await spawnClaude("C:\\tmp\\settings.json", "m1", "D:\\work\\dir", true);
     expect(r.status).toBe("ok");

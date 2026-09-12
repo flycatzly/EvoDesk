@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -6,6 +6,11 @@ export interface LaunchSpec { profileName: string; apiBase: string; apiKeyRef: s
 
 export function sanitizeModelName(model: string): string {
   return model.replace(/[[\]*?"<>|/:\\]/g, "_");
+}
+
+/** 模型名白名单:仅字母数字与 . _ : @ -。供 spawnClaude 与路由层(Task 6)复用。 */
+export function isValidModelName(model: string): boolean {
+  return /^[A-Za-z0-9._:@-]+$/.test(model);
 }
 
 export function buildLaunchSettings(raw: string, model: string | null): string {
@@ -26,11 +31,30 @@ export function buildLaunchSettings(raw: string, model: string | null): string {
 }
 
 export function spawnClaude(settingsPath: string, model: string | null, workdir: string, dryRun: boolean): Promise<{ status: "ok" | "failed"; detail: string }> {
+  // 防注入:spawn 带 shell:true 时参数经 cmd.exe 拼接,模型名若含 & | ; 等元字符即可执行任意命令
+  // (模型名来自导入的 profile / 用户 payload)。白名单校验对 dryRun 也生效(fail closed):
+  // 预览不得把不可安全执行的命令当作可运行命令展示。校验先于预检,非法名绝不触发 spawn。
+  if (model && !isValidModelName(model)) {
+    return Promise.resolve({ status: "failed", detail: `模型名含非法字符:${model}` });
+  }
   const args = ["--settings", settingsPath, ...(model ? ["--model", model] : [])];
-  if (dryRun) return Promise.resolve({ status: "ok", detail: `claude.cmd ${args.join(" ")} (工作目录:${workdir})` });
-  // shell:true 使 claude.cmd 经 PATH 解析(复刻 launcher.ps1 行为)
+  if (dryRun) {
+    // DryRun 的意义就是不依赖环境:不做 claude.cmd 预检,仅返回命令预览
+    return Promise.resolve({ status: "ok", detail: `claude.cmd ${args.join(" ")} (工作目录:${workdir})` });
+  }
+  // 预检:shell:true 下 spawn 事件在 cmd.exe 进程启动时即触发,claude.cmd 缺失也会假成功(spec §10.3),
+  // 故先 where 探测安装状态。
+  try {
+    execSync("where claude.cmd", { stdio: "pipe" });
+  } catch {
+    return Promise.resolve({ status: "failed", detail: "未找到 claude.cmd,请先 npm install -g @anthropic-ai/claude-code" });
+  }
+  // 仍需 shell:true:Node 在 Windows 上不经 shell 无法直接 CreateProcess 一个 .cmd(PATHEXT 解析)。
+  // 注入面已收口:settingsPath 双引号包裹(路径含空格不断参数),模型名经 isValidModelName 白名单,
+  // 两者拼接后不含可被 cmd.exe 解释的元字符。
+  const argStr = `--settings "${settingsPath}"${model ? ` --model ${model}` : ""}`;
   return new Promise((resolve) => {
-    const child = spawn("claude.cmd", args, { cwd: workdir, windowsHide: true, stdio: "ignore", shell: true });
+    const child = spawn("claude.cmd", [argStr], { cwd: workdir, windowsHide: true, stdio: "ignore", shell: true });
     child.on("error", (e) => resolve({ status: "failed", detail: String(e).slice(0, 200) }));
     child.on("spawn", () => { child.unref(); resolve({ status: "ok", detail: "已启动新终端窗口" }); });
   });
