@@ -6,6 +6,7 @@ export function SettingsForm({ initial }: { initial: Record<string, unknown> }) 
     cost_budget_usd: String(initial.cost_budget_usd ?? 10),
     vault_path: String(initial.vault_path ?? "D:\\work\\Obsidian\\Obsidian"),
     waiting_human_timeout_hours: String(initial.waiting_human_timeout_hours ?? 24),
+    timezone: String(initial.timezone ?? ""),
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -23,6 +24,7 @@ export function SettingsForm({ initial }: { initial: Record<string, unknown> }) 
           cost_budget_usd: Number(form.cost_budget_usd) || 0,
           vault_path: form.vault_path,
           waiting_human_timeout_hours: Number(form.waiting_human_timeout_hours) || 24,
+          timezone: form.timezone, // 字符串,空串有效 = 清除(跟随系统)
         }),
       });
       if (!res.ok) { setError(true); return; }
@@ -34,10 +36,10 @@ export function SettingsForm({ initial }: { initial: Record<string, unknown> }) 
       setSaving(false);
     }
   };
-  const field = (label: string, key: keyof typeof form) => (
+  const field = (label: string, key: keyof typeof form, placeholder?: string) => (
     <label className="block mb-3">
       <span className="text-sm block mb-1">{label}</span>
-      <input className="input w-full px-3 py-2 text-sm" value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} />
+      <input className="input w-full px-3 py-2 text-sm" value={form[key]} placeholder={placeholder} onChange={(e) => setForm({ ...form, [key]: e.target.value })} />
     </label>
   );
   return (
@@ -45,6 +47,7 @@ export function SettingsForm({ initial }: { initial: Record<string, unknown> }) 
       {field("成本预算(USD,超限进风险雷达)", "cost_budget_usd")}
       {field("Obsidian vault 路径(知识库 M4 接入)", "vault_path")}
       {field("待人工超时阈值(小时)", "waiting_human_timeout_hours")}
+      {field("时区(留空跟随系统)", "timezone", "IANA 名,如 Asia/Shanghai,留空跟随系统")}
       <div className="flex items-center gap-3">
         <button onClick={save} disabled={saving} className="accent-btn px-4 py-2 text-sm">
           {saving ? "保存中…" : saved ? "已保存 ✓" : "保存设置"}

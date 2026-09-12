@@ -1,26 +1,28 @@
 import { getDb } from "@/lib/db/client";
-import { tasks, projects, quickActions } from "@/lib/db/schema";
+import { tasks, projects, quickActions, settings } from "@/lib/db/schema";
 import { tickRecurring } from "@/lib/domain/recurring";
+import { tzToday } from "@/lib/domain/tz";
 import { TaskCard } from "@/components/TaskCard";
 import { QuickActionsCard } from "@/components/QuickActionsCard";
 
 export const dynamic = "force-dynamic";
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export default function Dashboard() {
   const db = getDb();
   tickRecurring(db);
+  // 读 settings KV(模式同 /settings 页):timezone 决定"今天"分桶边界(空=系统本地)
+  const settingRows = db.select().from(settings).all() as { key: string; value: string }[];
+  const kv: Record<string, unknown> = {};
+  for (const r of settingRows) { try { kv[r.key] = JSON.parse(r.value); } catch { kv[r.key] = r.value; } }
+  const todayStr = tzToday(typeof kv.timezone === "string" ? kv.timezone : "");
   const allTasks = db.select().from(tasks).all() as (typeof tasks.$inferSelect)[];
   const projectRows = db.select().from(projects).all() as (typeof projects.$inferSelect)[];
   const projectName = (id: string | null) => projectRows.find((p) => p.id === id)?.name;
   const active = allTasks.filter((t) => !["done", "archived", "canceled"].includes(t.status));
-  // ISO 字符串字典序即日期序:延期与即将截止都按到期日升序(最旧的在前)
-  const overdue = active.filter((t) => t.dueDate && t.dueDate < today()).sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1));
-  const dueToday = active.filter((t) => t.dueDate === today());
-  const upcoming = active.filter((t) => t.dueDate && t.dueDate > today()).sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1)).slice(0, 5);
+  // ISO 字符串字典序即日期序:延期与即将截止都按到期日升序(最旧的在前);分桶边界用 tzToday(due 存储仍为 UTC-ISO)
+  const overdue = active.filter((t) => t.dueDate && t.dueDate < todayStr).sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1));
+  const dueToday = active.filter((t) => t.dueDate === todayStr);
+  const upcoming = active.filter((t) => t.dueDate && t.dueDate > todayStr).sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1)).slice(0, 5);
   const counters = [
     { label: "今日待办", value: dueToday.length + overdue.length },
     { label: "执行中", value: allTasks.filter((t) => t.status === "running").length },
