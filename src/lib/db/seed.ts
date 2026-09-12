@@ -1,6 +1,7 @@
 import type { Db } from "./test-util";
 import { eq } from "drizzle-orm";
-import { flowTemplates, executors, projects, recurringRules, settings, tasks, chats, quickActions } from "./schema";
+import { flowTemplates, executors, projects, recurringRules, settings, tasks, chats, quickActions, canvases, links, goals } from "./schema";
+import { newWidgetId, type CanvasLayout } from "@/lib/domain/canvas";
 
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
@@ -132,5 +133,74 @@ export function seedIfEmpty(db: Db): void {
         db.update(quickActions).set({ payload: "Get-ChildItem ." }).where(eq(quickActions.id, a.id)).run();
       }
     }
+  }
+
+  seedCanvases(db);
+  seedLinksAndGoals(db);
+}
+
+// —— 画布种子:默认画布(无任何非模板画布时播种一次)+ 3 套模板画布(按名补齐)——
+const G = (groupTitle: string, types: string[]): { groupTitle: string; widgets: { id: string; type: string; config: Record<string, unknown> }[] } => ({
+  groupTitle,
+  widgets: types.map((type) => ({ id: newWidgetId(), type, config: type === "todo" ? { scope: "today" } : {} })),
+});
+
+function seedCanvases(db: Db): void {
+  const rows = db.select().from(canvases).all() as (typeof canvases.$inferSelect)[];
+  const tplNames = new Set(rows.filter((c) => c.isTemplate).map((c) => c.name));
+  const missingTpl: (typeof canvases.$inferInsert)[] = [
+    { name: "学生工作台", layout: [
+        G("今日学习", ["counters", "todo"]),
+        G("课程与笔记", ["calendar", "notes"]),
+        G("网课与资料", ["links", "vault"]),
+        G("学习进度", ["goals"]),
+      ] },
+    { name: "职场开发者工作台", layout: [
+        G("工作焦点", ["counters", "todo", "calendar"]),
+        G("项目与笔记", ["notes", "vault"]),
+        G("开发工具", ["links"]),
+        G("备忘与风险", ["quickactions", "radar"]),
+      ] },
+    { name: "生活个人工作台", layout: [
+        G("今日计划", ["counters", "todo", "calendar"]),
+        G("兴趣与清单", ["goals", "notes"]),
+        G("常用网站", ["links"]),
+      ] },
+  ]
+    .filter((t) => !tplNames.has(t.name))
+    .map((t) => ({ ...t, layout: JSON.stringify(t.layout) as unknown as string, columns: "2", locked: false, isTemplate: true, shareToken: null, id: id(), createdAt: now(), updatedAt: now() }));
+  if (missingTpl.length > 0) db.insert(canvases).values(missingTpl).run();
+
+  const hasNormalCanvas = rows.some((c) => !c.isTemplate);
+  if (!hasNormalCanvas) {
+    const layout: CanvasLayout = [
+      G("今日焦点", ["counters", "todo", "calendar"]),
+      G("灵感与笔记", ["notes", "vault"]),
+      G("链接与目标", ["links", "goals", "radar", "quickactions"]),
+    ];
+    db.insert(canvases).values({
+      id: id(), name: "我的工作台", columns: "2", locked: false,
+      layout: JSON.stringify(layout), isTemplate: false, shareToken: null, createdAt: now(), updatedAt: now(),
+    }).run();
+  }
+}
+
+// —— 链接/目标示例:仅空表时播种(与示例任务同一策略,不与用户数据混排)——
+function seedLinksAndGoals(db: Db): void {
+  if ((db.select().from(links).all() as unknown[]).length === 0) {
+    const n = now();
+    db.insert(links).values([
+      { id: id(), title: "Z.ai 控制台", url: "https://chat.z.ai", category: "开发", sort: 0, createdAt: n },
+      { id: id(), title: "GitHub", url: "https://github.com", category: "开发", sort: 1, createdAt: n },
+      { id: id(), title: "掘金", url: "https://juejin.cn", category: "开发", sort: 2, createdAt: n },
+      { id: id(), title: "MDN 文档", url: "https://developer.mozilla.org", category: "学习", sort: 0, createdAt: n },
+    ]).run();
+  }
+  if ((db.select().from(goals).all() as unknown[]).length === 0) {
+    const n = now();
+    db.insert(goals).values([
+      { id: id(), title: "今年读 12 本书", category: "reading", target: 12, current: 3, unit: "本", deadline: null, color: null, archived: false, createdAt: n, updatedAt: n },
+      { id: id(), title: "全年健身 48 次", category: "fitness", target: 48, current: 18, unit: "次", deadline: null, color: null, archived: false, createdAt: n, updatedAt: n },
+    ]).run();
   }
 }

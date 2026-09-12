@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createTestDb } from "./test-util";
 import { seedIfEmpty } from "./seed";
-import { tasks, projects, flowTemplates, executors, recurringRules, settings, chats, quickActions } from "./schema";
+import { tasks, projects, flowTemplates, executors, recurringRules, settings, chats, quickActions, canvases as canvasesTable, links as linksTable, goals as goalsTable } from "./schema";
 import { eq } from "drizzle-orm";
 
 describe("seedIfEmpty", () => {
@@ -102,5 +102,44 @@ describe("存量快捷指令迁移", () => {
     const fixed = (db.select().from(quickActions).all() as (typeof quickActions.$inferSelect)[])
       .find((a) => a.id === stale.id)!;
     expect(fixed.payload).toBe("Get-ChildItem .");
+  });
+});
+
+describe("画布与链接/目标种子", () => {
+  it("默认画布含至少 7 类组件;3 套模板画布;幂等", () => {
+    const db = createTestDb();
+    seedIfEmpty(db);
+    seedIfEmpty(db);
+    const rows = db.select().from(canvasesTable).all() as (typeof canvasesTable.$inferSelect)[];
+    const tpl = rows.filter((c) => c.isTemplate);
+    const normal = rows.filter((c) => !c.isTemplate);
+    expect(new Set(tpl.map((c) => c.name))).toEqual(new Set(["学生工作台", "职场开发者工作台", "生活个人工作台"]));
+    expect(normal).toHaveLength(1);
+    const layout = JSON.parse(normal[0].layout) as { widgets: { type: string }[] }[];
+    const types = new Set(layout.flatMap((g) => g.widgets.map((w) => w.type)));
+    expect(types.size).toBeGreaterThanOrEqual(7);
+    // 组件 id 全局唯一
+    const ids = layout.flatMap((g) => g.widgets.map((w) => w.id));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+  it("部分初始化库:已有非模板画布则不重复播种默认画布,模板仍补齐", () => {
+    const db = createTestDb();
+    const now = new Date().toISOString();
+    db.insert(canvasesTable).values({ id: "c-user", name: "我的", columns: "3", locked: false, isTemplate: false, shareToken: null, layout: "[]", createdAt: now, updatedAt: now }).run();
+    seedIfEmpty(db);
+    const rows = db.select().from(canvasesTable).all() as (typeof canvasesTable.$inferSelect)[];
+    expect(rows.filter((c) => !c.isTemplate)).toHaveLength(1); // 用户的画布保留,无新增
+    expect(rows.filter((c) => c.isTemplate)).toHaveLength(3);
+  });
+  it("链接与目标示例:仅在空表时播种", () => {
+    const db = createTestDb();
+    seedIfEmpty(db);
+    expect((db.select().from(linksTable).all() as unknown[]).length).toBeGreaterThanOrEqual(3);
+    const goals = db.select().from(goalsTable).all() as (typeof goalsTable.$inferSelect)[];
+    expect(goals.length).toBeGreaterThanOrEqual(2);
+    expect(goals.some((g) => g.category === "reading")).toBe(true);
+    expect(goals.some((g) => g.category === "fitness")).toBe(true);
+    seedIfEmpty(db);
+    expect((db.select().from(linksTable).all() as unknown[]).length).toBeGreaterThanOrEqual(3);
   });
 });
