@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createTestDb } from "./test-util";
 import { seedIfEmpty } from "./seed";
 import { tasks, projects, flowTemplates, executors, recurringRules, settings, chats, quickActions } from "./schema";
+import { eq } from "drizzle-orm";
 
 describe("seedIfEmpty", () => {
   it("首播:4 模板/5 执行器/2 项目/2 规则/5 示例任务/示例会话/设置;幂等:再跑不增", () => {
@@ -58,5 +59,34 @@ describe("seedIfEmpty", () => {
     expect(qa.length).toBe(2);
     expect(qa.filter((a) => a.type === "url" && a.payload === "https://chat.z.ai").length).toBe(1);
     expect(qa.filter((a) => a.type === "command" && a.payload === "Get-ChildItem data/sandbox" && a.shell === "powershell").length).toBe(1);
+  });
+});
+
+describe("部分库收敛(按表按名单补种)", () => {
+  it("仅有用户任务时:补齐模板/项目/规则/执行器/设置,保留用户任务且不混入示例", () => {
+    const db = createTestDb();
+    db.insert(tasks).values({
+      id: crypto.randomUUID(), title: "用户自己的任务", status: "ready", tags: "[]",
+      complexity: "S", priority: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    }).run();
+    seedIfEmpty(db);
+    expect((db.select().from(flowTemplates).all() as unknown[]).length).toBe(4);
+    expect((db.select().from(projects).all() as unknown[]).length).toBe(2);
+    expect((db.select().from(recurringRules).all() as unknown[]).length).toBe(2);
+    const ex = db.select().from(executors).all() as (typeof executors.$inferSelect)[];
+    expect(ex.length).toBe(5); // 4 名单执行器 + 审查占位模型
+    const userTasks = (db.select().from(tasks).all() as (typeof tasks.$inferSelect)[]).filter((t) => t.title === "用户自己的任务");
+    expect(userTasks.length).toBe(1);
+    expect((db.select().from(tasks).all() as unknown[]).length).toBe(1); // 不混入示例任务
+  });
+  it("名单部分缺失时只补缺失项(如模板缺 2 补 2)", () => {
+    const db = createTestDb();
+    seedIfEmpty(db);
+    const keep = ["S 轻量通道", "M 标准流程"];
+    for (const t of db.select().from(flowTemplates).all() as (typeof flowTemplates.$inferSelect)[]) {
+      if (!keep.includes(t.name)) db.delete(flowTemplates).where(eq(flowTemplates.id, t.id)).run();
+    }
+    seedIfEmpty(db);
+    expect((db.select().from(flowTemplates).all() as unknown[]).length).toBe(4);
   });
 });
