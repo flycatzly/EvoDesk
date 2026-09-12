@@ -115,7 +115,7 @@ describe("画布与链接/目标种子", () => {
     const normal = rows.filter((c) => !c.isTemplate);
     expect(new Set(tpl.map((c) => c.name))).toEqual(new Set(["学生工作台", "职场开发者工作台", "生活个人工作台"]));
     expect(normal).toHaveLength(1);
-    const layout = JSON.parse(normal[0].layout) as { widgets: { type: string }[] }[];
+    const layout = JSON.parse(normal[0].layout) as { widgets: { id: string; type: string }[] }[];
     const types = new Set(layout.flatMap((g) => g.widgets.map((w) => w.type)));
     expect(types.size).toBeGreaterThanOrEqual(7);
     // 组件 id 全局唯一

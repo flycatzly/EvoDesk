@@ -1,7 +1,7 @@
 import type { Db } from "./test-util";
 import { eq } from "drizzle-orm";
 import { flowTemplates, executors, projects, recurringRules, settings, tasks, chats, quickActions, canvases, links, goals } from "./schema";
-import { newWidgetId, type CanvasLayout } from "@/lib/domain/canvas";
+import { newWidgetId, type CanvasLayout, type WidgetType } from "@/lib/domain/canvas";
 
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
@@ -140,7 +140,7 @@ export function seedIfEmpty(db: Db): void {
 }
 
 // —— 画布种子:默认画布(无任何非模板画布时播种一次)+ 3 套模板画布(按名补齐)——
-const G = (groupTitle: string, types: string[]): { groupTitle: string; widgets: { id: string; type: string; config: Record<string, unknown> }[] } => ({
+const G = (groupTitle: string, types: WidgetType[]): { groupTitle: string; widgets: { id: string; type: WidgetType; config: Record<string, unknown> }[] } => ({
   groupTitle,
   widgets: types.map((type) => ({ id: newWidgetId(), type, config: type === "todo" ? { scope: "today" } : {} })),
 });

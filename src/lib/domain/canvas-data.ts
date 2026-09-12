@@ -22,12 +22,12 @@ export type WidgetData = {
   };
   todo: { tasks: TaskLite[] };
   calendar: { today: string; monthLabel: string; dayCounts: Record<string, number> };
-  notesWidget: { notes: { id: string; title: string; updatedAt: string }[] };
+  notes: { notes: { id: string; title: string; updatedAt: string }[] };
   links: { groups: { category: string; links: { id: string; title: string; url: string }[] }[] };
-  goalsWidget: { goals: { id: string; title: string; current: number; target: number; unit: string; color: string | null; deadline: string | null; category: string }[] };
+  goals: { goals: { id: string; title: string; current: number; target: number; unit: string; color: string | null; deadline: string | null; category: string }[] };
   vault: { configured: boolean; rootName: string; noteCount: number; dirCount: number };
   radar: { items: RadarItem[] };
-  quickactions: { actions: { id: string; name: string; type: string; icon: string | null }[] };
+  quickactions: { actions: (typeof quickActions.$inferSelect)[] };
 };
 export type WidgetDataBundle = { [K in WidgetType]?: WidgetData[K] };
 
@@ -147,7 +147,7 @@ export function collectWidgetData(db: Db, types: WidgetType[], timezone?: string
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, 5)
       .map((n) => ({ id: n.id, title: n.title, updatedAt: n.updatedAt }));
-    bundle.notesWidget = { notes: rows };
+    bundle.notes = { notes: rows };
   }
   if (wanted.has("links")) {
     const rows = (db.select().from(links).all() as (typeof links.$inferSelect)[])
@@ -161,7 +161,7 @@ export function collectWidgetData(db: Db, types: WidgetType[], timezone?: string
     bundle.links = { groups: [...byCat.entries()].map(([category, ls]) => ({ category, links: ls })) };
   }
   if (wanted.has("goals")) {
-    bundle.goalsWidget = {
+    bundle.goals = {
       goals: (db.select().from(goals).all() as (typeof goals.$inferSelect)[])
         .filter((g) => !g.archived)
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
@@ -178,8 +178,7 @@ export function collectWidgetData(db: Db, types: WidgetType[], timezone?: string
     bundle.quickactions = {
       actions: (db.select().from(quickActions).all() as (typeof quickActions.$inferSelect)[])
         .filter((a) => a.enabled)
-        .sort((a, b) => (a.sort !== b.sort ? a.sort - b.sort : a.createdAt.localeCompare(b.createdAt)))
-        .map((a) => ({ id: a.id, name: a.name, type: a.type, icon: a.icon })),
+        .sort((a, b) => (a.sort !== b.sort ? a.sort - b.sort : a.createdAt.localeCompare(b.createdAt))),
     };
   }
   return bundle;

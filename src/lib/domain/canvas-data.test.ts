@@ -32,7 +32,7 @@ describe("collectWidgetData", () => {
     expect(bundle.todo!.tasks.map((t) => t.overdue)).toEqual([true, false]); // 逾期置顶
     expect(bundle.calendar!.today).toBe("2026-09-12");
     expect(bundle.links!.groups.length).toBeGreaterThanOrEqual(2);
-    expect(bundle.goalsWidget!.goals).toHaveLength(2);
+    expect(bundle.goals!.goals).toHaveLength(2);
     expect(bundle.quickactions!.actions).toHaveLength(2);
     expect(bundle.radar!.items.some((i) => i.kind === "overdue")).toBe(true); // 有逾期 → 雷达告警
   });
@@ -68,6 +68,6 @@ describe("collectWidgetData", () => {
     const n = now();
     db.insert(goals).values({ id: crypto.randomUUID(), title: "已归档", category: "custom", target: 5, current: 5, unit: "", deadline: null, color: null, archived: true, createdAt: n, updatedAt: n }).run();
     const bundle = collectWidgetData(db, ["goals"], "", NOW);
-    expect(bundle.goalsWidget!.goals.every((g) => g.title !== "已归档")).toBe(true);
+    expect(bundle.goals!.goals.every((g) => g.title !== "已归档")).toBe(true);
   });
 });
