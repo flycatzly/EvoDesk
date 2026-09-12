@@ -201,6 +201,17 @@ describe("notes to-vault", () => {
     expect(md).not.toContain("第二篇内容");
     expect(getNote(b.id)!.vaultPath).toBeNull();
   });
+  it("tags 为损坏 JSON 字符串 → 仍 200(标签归一 [],不再 500)", async () => {
+    const vault = makeVault();
+    setVaultPath(vault);
+    const n = insertNote({ title: "损坏标签笔记", body: "正文", tags: "{broken-json" });
+    const res = await TO_VAULT(req(`/api/notes/${n.id}/to-vault`, { method: "POST" }), { params: Promise.resolve({ id: n.id }) });
+    expect(res.status).toBe(200);
+    const md = fs.readFileSync(path.join(vault, "02_笔记", "损坏标签笔记.md"), "utf8");
+    expect(md).toContain("# 损坏标签笔记");
+    expect(md).toContain("正文");
+    expect(md).not.toContain("broken-json");
+  });
   it("未知 id → 404", async () => {
     expect((await TO_VAULT(req("/api/notes/nope/to-vault", { method: "POST" }), { params: Promise.resolve({ id: "nope" }) })).status).toBe(404);
   });
