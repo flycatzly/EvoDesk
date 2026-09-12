@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createTestDb } from "@/lib/db/test-util";
 import { seedIfEmpty } from "@/lib/db/seed";
-import { tasks, notes, links, goals } from "@/lib/db/schema";
+import { tasks, notes, links, goals, settings as settingsTable } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { collectWidgetData } from "./canvas-data";
 
@@ -34,8 +34,15 @@ describe("collectWidgetData", () => {
     expect(bundle.links!.groups.length).toBeGreaterThanOrEqual(2);
     expect(bundle.goalsWidget!.goals).toHaveLength(2);
     expect(bundle.quickactions!.actions).toHaveLength(2);
-    expect(bundle.vault!.configured).toBe(false); // 测试库无 vault 目录
     expect(bundle.radar!.items.some((i) => i.kind === "overdue")).toBe(true); // 有逾期 → 雷达告警
+  });
+  it("vault 路径无效 → 未配置态(计数 0,不抛错)", () => {
+    const db = createTestDb();
+    seedIfEmpty(db);
+    db.update(settingsTable).set({ value: '"Z:/definitely/not/exist"' }).where(eq(settingsTable.key, "vault_path")).run();
+    const bundle = collectWidgetData(db, ["vault"], "", NOW);
+    expect(bundle.vault!.configured).toBe(false);
+    expect(bundle.vault!.noteCount).toBe(0);
   });
   it("只请求部分类型时,未请求的类型不出现", () => {
     const db = createTestDb();
