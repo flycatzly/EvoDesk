@@ -1,11 +1,17 @@
 import { getDb } from "@/lib/db/client";
-import { tasks, projects, quickActions, settings } from "@/lib/db/schema";
+import { tasks, projects, quickActions, settings, flowRuns, flowTemplates } from "@/lib/db/schema";
 import { tickRecurring } from "@/lib/domain/recurring";
 import { tzToday } from "@/lib/domain/tz";
 import { TaskCard } from "@/components/TaskCard";
 import { QuickActionsCard } from "@/components/QuickActionsCard";
+import { RadarCard, type RadarItem } from "@/components/RadarCard";
 
 export const dynamic = "force-dynamic";
+
+/** 当前时刻毫秒数。渲染期不允许直接调用 Date.now(react-hooks/purity);本页 force-dynamic 每请求重渲,经此封装取当前时间(同 tzToday 封装 new Date 的思路)。 */
+function nowMs(): number {
+  return Date.now();
+}
 
 export default function Dashboard() {
   const db = getDb();
@@ -33,6 +39,53 @@ export default function Dashboard() {
   const quickActionRows = (db.select().from(quickActions).all() as (typeof quickActions.$inferSelect)[])
     .filter((a) => a.enabled)
     .sort((a, b) => (a.sort !== b.sort ? a.sort - b.sort : a.createdAt.localeCompare(b.createdAt)));
+
+  // 风险雷达:四类按严重度排序(延期>超时>预算>绩效);阈值读 settings KV,缺省 回退默认
+  const timeoutHours = typeof kv.waiting_human_timeout_hours === "number" ? kv.waiting_human_timeout_hours : 24;
+  const costBudgetUsd = typeof kv.cost_budget_usd === "number" ? kv.cost_budget_usd : 10;
+  // 待人工超时:updatedAt 为 UTC-ISO,new Date 解析后与阈值小时数比较
+  const timeoutTasks = allTasks.filter(
+    (t) => t.status === "waiting_human" && nowMs() - new Date(t.updatedAt).getTime() > timeoutHours * 3600_000
+  );
+  // 本周(近 7 天)成本:startedAt 为 UTC-ISO,字典序比较即时间序
+  const flowRunRows = db.select().from(flowRuns).all() as (typeof flowRuns.$inferSelect)[];
+  const weekAgoIso = new Date(nowMs() - 7 * 24 * 3600_000).toISOString();
+  const weekCostUsd = flowRunRows.filter((r) => r.startedAt > weekAgoIso).reduce((s, r) => s + r.totalCostUsd, 0);
+  // 低绩效模板:统计样本足够(statRuns ≥ 5)且成功率低于一半
+  const flowTemplateRows = db.select().from(flowTemplates).all() as (typeof flowTemplates.$inferSelect)[];
+  const lowPerfTemplates = flowTemplateRows.filter((t) => t.statRuns >= 5 && t.statSuccessRate < 0.5);
+  const riskItems: RadarItem[] = [];
+  if (overdue.length > 0) {
+    riskItems.push({
+      kind: "overdue",
+      label: "已延期任务",
+      detail: `${overdue.length} 项已逾期:${overdue.slice(0, 5).map((t) => t.title).join("、")}`,
+      href: "/tasks",
+    });
+  }
+  if (timeoutTasks.length > 0) {
+    riskItems.push({
+      kind: "timeout",
+      label: "待人工超时",
+      detail: `${timeoutTasks.length} 项待人工超过 ${timeoutHours} 小时`,
+      href: "/tasks",
+    });
+  }
+  if (weekCostUsd > costBudgetUsd) {
+    riskItems.push({
+      kind: "budget",
+      label: "成本预算超支",
+      detail: `本周已花费 $${weekCostUsd.toFixed(2)} / 预算 $${costBudgetUsd.toFixed(2)}`,
+    });
+  }
+  if (lowPerfTemplates.length > 0) {
+    riskItems.push({
+      kind: "performance",
+      label: "低绩效流程模板",
+      detail: lowPerfTemplates.map((t) => `${t.name}(成功率 ${Math.round(t.statSuccessRate * 100)}%)`).join("、"),
+      href: "/flows",
+    });
+  }
 
   return (
     <div className="max-w-5xl">
@@ -77,6 +130,7 @@ export default function Dashboard() {
             : upcoming.map((t) => <TaskCard key={t.id} task={t} projectName={projectName(t.projectId)} />)}
         </section>
       </div>
+      <RadarCard items={riskItems} />
     </div>
   );
 }
