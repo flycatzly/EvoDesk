@@ -70,4 +70,22 @@ describe("collectWidgetData", () => {
     const bundle = collectWidgetData(db, ["goals"], "", NOW);
     expect(bundle.goals!.goals.every((g) => g.title !== "已归档")).toBe(true);
   });
+  it("links 段限量:分类数与每类条数截断,total 仍返回全量(大书签库不撑爆首页)", () => {
+    const db = createTestDb();
+    seedIfEmpty(db);
+    db.delete(links).run();
+    const n = now();
+    // 8 个分类 × 10 条 = 80 条,超过 LINK_WIDGET_MAX_GROUPS(6) 与 MAX_PER_GROUP(8)
+    for (let c = 0; c < 8; c++) {
+      for (let i = 0; i < 10; i++) {
+        db.insert(links).values({ id: crypto.randomUUID(), title: `L${c}-${i}`, url: `https://ex.com/${c}/${i}`, category: `分类${c}`, sort: i, createdAt: n }).run();
+      }
+    }
+    const bundle = collectWidgetData(db, ["links"], "", NOW);
+    expect(bundle.links!.total).toBe(80);
+    expect(bundle.links!.groups).toHaveLength(6);
+    for (const g of bundle.links!.groups) expect(g.links.length).toBeLessThanOrEqual(8);
+    // 截断保留的是排序靠前(sort 升序)的条目
+    expect(bundle.links!.groups[0].links.map((l) => l.title)).toEqual(["L0-0", "L0-1", "L0-2", "L0-3", "L0-4", "L0-5", "L0-6", "L0-7"]);
+  });
 });

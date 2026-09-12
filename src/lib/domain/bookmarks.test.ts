@@ -38,6 +38,17 @@ describe("pickCategory", () => {
     expect(pickCategory("书签栏")).toBe("收藏夹");
     expect(pickCategory("")).toBe("收藏夹");
   });
+  it("浏览器内部目录名(任意层级、中英文)逐级剔除,不成为分类", () => {
+    // 手机同步回来的嵌套「书签栏」(实测导入后出现 26 条「书签栏」分类)
+    expect(pickCategory("移动设备书签/书签栏")).toBe("收藏夹");
+    expect(pickCategory("其他书签/已导入")).toBe("收藏夹");
+    expect(pickCategory("书签栏/AI/书签栏")).toBe("AI");
+    expect(pickCategory("Bookmarks bar/Dev")).toBe("Dev");
+    expect(pickCategory("收藏夹")).toBe("收藏夹");
+    // 正常业务目录不受影响
+    expect(pickCategory("书签栏/开发/前端")).toBe("前端");
+    expect(pickCategory("其他书签/学习")).toBe("学习");
+  });
 });
 
 describe("toNetscapeHtml", () => {

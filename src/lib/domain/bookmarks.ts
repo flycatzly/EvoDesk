@@ -79,10 +79,13 @@ export function parseBookmarksJson(raw: string): BookmarkItem[] {
   return out;
 }
 
-/** 导入分类规则:直接父目录名;根下直接放的书签归「收藏夹」 */
+/** 浏览器内部目录名(中英文 Chrome/Edge):不应成为业务分类,逐级剔除 */
+const INTERNAL_FOLDER_RE = /^(书签栏|其他书签|移动设备书签|收藏夹栏|收藏夹|已导入|bookmarks? bar|other bookmarks|mobile bookmarks|favorites( bar)?)$/i;
+
+/** 导入分类规则:取目录路径中最后一个非浏览器内部目录名;全是内部目录或根下直放 → 「收藏夹」 */
 export function pickCategory(folder: string): string {
-  const parts = folder.split("/").filter(Boolean);
-  return parts.length >= 2 ? parts[parts.length - 1] : "收藏夹";
+  const meaningful = folder.split("/").filter((p) => p && !INTERNAL_FOLDER_RE.test(p));
+  return meaningful.length > 0 ? meaningful[meaningful.length - 1] : "收藏夹";
 }
 
 const htmlEscape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

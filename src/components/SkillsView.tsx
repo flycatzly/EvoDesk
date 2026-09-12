@@ -96,6 +96,8 @@ export function SkillsView() {
   const starred = filtered.filter((s) => meta[s.path]?.star);
   const byCat = new Map<string, SkillInfo[]>();
   for (const s of filtered) {
+    // 已进「★ 常用」的不再在分类区重复展示
+    if (meta[s.path]?.star) continue;
     const list = byCat.get(s.category) ?? [];
     list.push(s);
     byCat.set(s.category, list);

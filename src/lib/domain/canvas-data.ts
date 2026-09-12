@@ -23,13 +23,17 @@ export type WidgetData = {
   todo: { tasks: TaskLite[] };
   calendar: { today: string; monthLabel: string; dayCounts: Record<string, number> };
   notes: { notes: { id: string; title: string; updatedAt: string }[] };
-  links: { groups: { category: string; links: { id: string; title: string; url: string }[] }[] };
+  links: { groups: { category: string; links: { id: string; title: string; url: string }[] }[]; total: number };
   goals: { goals: { id: string; title: string; current: number; target: number; unit: string; color: string | null; deadline: string | null; category: string }[] };
   vault: { configured: boolean; rootName: string; noteCount: number; dirCount: number };
   radar: { items: RadarItem[] };
   quickactions: { actions: (typeof quickActions.$inferSelect)[] };
 };
 export type WidgetDataBundle = { [K in WidgetType]?: WidgetData[K] };
+
+// 首页链接组件的展示上限(完整列表在 /links 管理)
+export const LINK_WIDGET_MAX_GROUPS = 6;
+export const LINK_WIDGET_MAX_PER_GROUP = 8;
 
 /** 风险雷达四类项(从旧仪表盘 page.tsx 原样抽取,口径不变) */
 export function buildRadarItems(db: Db, allTasks: (typeof tasks.$inferSelect)[], overdueCount: number, overdueTitles: string[], now: Date): RadarItem[] {
@@ -150,6 +154,8 @@ export function collectWidgetData(db: Db, types: WidgetType[], timezone?: string
     bundle.notes = { notes: rows };
   }
   if (wanted.has("links")) {
+    // 首页画布限量:全量渲染会在浏览器书签批量导入后拖垮首页(实测 1292 条/103 分类),
+    // 组件只展示前几个分类、每类前几条,完整列表去 /links
     const rows = (db.select().from(links).all() as (typeof links.$inferSelect)[])
       .sort((a, b) => a.sort - b.sort || a.createdAt.localeCompare(b.createdAt));
     const byCat = new Map<string, { id: string; title: string; url: string }[]>();
@@ -158,7 +164,10 @@ export function collectWidgetData(db: Db, types: WidgetType[], timezone?: string
       list.push({ id: l.id, title: l.title, url: l.url });
       byCat.set(l.category, list);
     }
-    bundle.links = { groups: [...byCat.entries()].map(([category, ls]) => ({ category, links: ls })) };
+    const groups = [...byCat.entries()]
+      .slice(0, LINK_WIDGET_MAX_GROUPS)
+      .map(([category, ls]) => ({ category, links: ls.slice(0, LINK_WIDGET_MAX_PER_GROUP) }));
+    bundle.links = { groups, total: rows.length };
   }
   if (wanted.has("goals")) {
     bundle.goals = {

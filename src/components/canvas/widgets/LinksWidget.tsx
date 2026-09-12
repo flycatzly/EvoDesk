@@ -1,11 +1,12 @@
 import { WidgetEmpty } from "./WidgetEmpty";
 import type { WidgetData } from "@/lib/domain/canvas-data";
 
-// 常用链接组件:按分类分组,新窗口一键打开
+// 常用链接组件:按分类分组,新窗口一键打开;数据在 canvas-data 已限量(大库不撑爆首页)
 export function LinksWidget({ data }: { data: WidgetData["links"] }) {
   if (data.groups.length === 0) {
     return <WidgetEmpty text="还没有收藏链接。" href="/links" linkLabel="去添加 →" />;
   }
+  const shown = data.groups.reduce((s, g) => s + g.links.length, 0);
   return (
     <div className="space-y-2">
       {data.groups.map((g) => (
@@ -28,6 +29,11 @@ export function LinksWidget({ data }: { data: WidgetData["links"] }) {
           </div>
         </div>
       ))}
+      {data.total > shown && (
+        <a href="/links" className="text-xs block pt-1" style={{ color: "var(--accent)" }}>
+          共 {data.total} 条链接,查看全部 →
+        </a>
+      )}
     </div>
   );
 }
