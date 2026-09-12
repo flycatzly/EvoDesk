@@ -39,7 +39,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const userMsg = { id: crypto.randomUUID(), chatId: id, role: "user", content, executorId: null, model: null, tokensIn: 0, tokensOut: 0, costUsd: 0, createdAt: nowIso };
   db.insert(chatMessages).values(userMsg).run();
   const history = db.select().from(chatMessages).where(eq(chatMessages.chatId, id)).orderBy(asc(chatMessages.createdAt)).all() as (typeof chatMessages.$inferSelect)[];
-  const llmMessages = [{ role: "system" as const, content: SYSTEM }, ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))];
+  // 历史窗口:只送最近 40 条,防 token 随会话长度线性增长;system 始终单独保留,不占窗口
+  const windowed = history.slice(-40);
+  const llmMessages = [{ role: "system" as const, content: SYSTEM }, ...windowed.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))];
   // streamLlm 内置 120s abort(chats 无 runner 清扫耦合,无阈值约束)
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

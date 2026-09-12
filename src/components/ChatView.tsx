@@ -51,7 +51,9 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
         buffer = blocks.pop() ?? "";
         for (const block of blocks) {
           if (!block.startsWith("data:")) continue;
-          const evt = JSON.parse(block.slice(5).trim()) as { delta?: string; done?: boolean; error?: string; message?: { id: string; role: string; content: string; model: string | null; costUsd: number } };
+          // 解析失败(半截块/非 JSON 噪声)跳过该块,不中断整个流
+          let evt: { delta?: string; done?: boolean; error?: string; message?: { id: string; role: string; content: string; model: string | null; costUsd: number } };
+          try { evt = JSON.parse(block.slice(5).trim()); } catch { continue; }
           if (evt.delta) setMessages((m) => m.map((x) => (x.id === assistantId ? { ...x, content: x.content + evt.delta } : x)));
           if (evt.done) {
             if (evt.error) { setError(evt.error); setMessages((m) => m.filter((x) => x.id !== assistantId)); }
@@ -70,9 +72,11 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
     }
   };
 
+  // toTask 在组件内定义:setError 可达,失败落到既有 error state,而非未处理的 promise 拒绝
   const toTask = (content: string) => {
     fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: content.slice(0, 40), description: content }) })
-      .then(() => router.push("/inbox"));
+      .then(() => router.push("/inbox"))
+      .catch(() => setError("转为任务失败,请重试"));
   };
 
   return (

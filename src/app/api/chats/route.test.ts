@@ -210,4 +210,28 @@ describe("POST /api/chats/[id]/messages", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].role).toBe("user");
   });
+  it("历史窗口:45 条历史 + 新消息 → 上游只收最近 40 条,system 单独保留不占窗口", async () => {
+    const chat = await createChat({});
+    enable("快速模型");
+    // 直插 45 条 user/assistant 交替历史;createdAt 递增保证 orderBy(asc) 排序确定
+    const base = Date.now() - 100_000;
+    for (let i = 0; i < 45; i++) {
+      db.insert(chatMessages).values({
+        id: crypto.randomUUID(), chatId: chat.id, role: i % 2 === 0 ? "user" : "assistant",
+        content: `历史-${i}`, executorId: null, model: null, tokensIn: 0, tokensOut: 0, costUsd: 0,
+        createdAt: new Date(base + i).toISOString(),
+      }).run();
+    }
+    const f = stubLlm("回答");
+    const res = await SEND_MSG(chat.id, { content: "新消息" });
+    await res.text();
+    // openai 形态 body.messages 即 llmMessages:41 = 1 system + 40 窗口(最近 39 条旧历史 + 1 条新用户消息)
+    const init = f.mock.calls[0][1] as { body: string };
+    const body = JSON.parse(init.body) as { messages: { role: string; content: string }[] };
+    expect(body.messages).toHaveLength(41);
+    expect(body.messages[0].role).toBe("system");
+    expect(body.messages[1].content).toBe("历史-6"); // 最旧的 6 条被窗口截掉
+    expect(body.messages[2].content).toBe("历史-7");
+    expect(body.messages.at(-1)!.content).toBe("新消息");
+  });
 });
