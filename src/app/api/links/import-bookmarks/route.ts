@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
-import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { links } from "@/lib/db/schema";
 import { parseBookmarksJson, pickCategory } from "@/lib/domain/bookmarks";

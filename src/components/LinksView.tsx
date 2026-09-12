@@ -126,7 +126,8 @@ export function LinksView() {
           <button className="accent-btn text-xs px-2 py-1" onClick={() => void scanBookmarks()} disabled={bmScanning}>
             {bmScanning ? "读取中…" : bmProfiles === null ? "读取 Chrome/Edge 收藏夹" : "重新读取"}
           </button>
-          <a className="ghost-btn text-xs px-2 py-1" href="/api/links/export-bookmarks">导出书签 HTML(可导入浏览器)</a>
+          {/* API 路由文件下载(attachment),需原生 <a download>,非页面导航 */}
+          <a className="ghost-btn text-xs px-2 py-1" href="/api/links/export-bookmarks" download>导出书签 HTML(可导入浏览器)</a>
           {bmMsg && <span className="text-xs" style={{ color: "var(--accent)" }}>{bmMsg}</span>}
         </div>
         {bmProfiles !== null && bmProfiles.length > 0 && (
