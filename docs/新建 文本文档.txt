@@ -1,0 +1,221 @@
+增加模块
+
+通过组件拖拽的方式整合待办任务、日程日历、笔记知识库、常用链接、目标进度等能力，打造属于自己的信息聚合页面，解决多工具来回切换、信息分散的痛点。适合开发者、学生、职场人员做个人效率管理
+
+待办任务
+
+管理每日任务，支持任务勾选完成、标记优先级，区分紧急、非紧急事项
+
+日历时间组件
+
+嵌入日历，展示日期、周计划，无需跳转外部日历应用
+
+笔记随笔
+
+记录灵感碎片、学习笔记，支持分栏分区管理
+
+常用链接收藏
+
+聚合工作、学习网站链接，替代浏览器收藏夹，页面内一键访问
+
+目标进度
+
+进度条可视化展示读书、健身、项目等目标完成情况
+
+知识库收纳
+
+分类存储文档、图片资料，实现资料统一归档
+
+1. 包含首页、任务、内容灵感、本周复盘和新手帮助 
+
+2. 支持任务和灵感的新增、编辑、删除、筛选与状态更新。 
+
+3. 首页显示今日任务、逾期任务、灵感数量和项目进度。 
+4. 本周复盘显示完成率、每日完成数量和本周新增内容。 
+
+页面适配电脑和手机，使用清晰的中文界面。 
+
+使用多栏布局：2 栏、3 栏布局，避免全部内容单列堆叠；
+分组管理：同类组件放入同一个分组容器，设置分组标题，实现功能分区；
+配色方案：选用低饱和度简约配色，减少高饱和花哨元素；
+合理留白：组件之间保留间距，提升可读性。
+3.4 权限与访问配置
+布局完成后锁定画布布局，防止误拖拽打乱排版；
+访问权限设置
+个人自用：设置私有访问，仅本人可见；
+对外分享：开启公开访问链接，将链接分享给他人；
+浏览器添加书签，实现一键快速打开工作台。
+4 模板快速复用方案
+如果不想从零开始搭建，可以复用社区公开模板快速落地：
+
+获取公开工作台模板链接；
+在自己账号中复制生成模板副本；
+二次裁剪：删除无用组件、修改文字、替换素材，适配自己的业务场景。
+优势：零基础用户 5 分钟即可获得可用工作台。
+
+5 不同人群参考模块组合
+5.1 学生工作台组合
+今日待办 + 课程表 + 笔记区 + 网课链接收藏 + 学习进度跟踪
+
+5.2 职场开发者 / 打工人工作台组合
+工作待办 + 日程计划 + 项目笔记 + 开发常用工具链接 + 备忘录
+
+5.3 生活个人工作台组合
+每日计划 + 阅读影视清单 + 灵感笔记 + 个人目标进度 + 常用网站集合
+
+6 最佳实践与踩坑避坑
+6.1 最佳实践
+PC 端负责编辑，手机端仅用于浏览查看；
+定期维护：每周清理过期任务、归档历史笔记，防止工作台信息堆积；
+克制添加功能：只保留真实会使用的模块，功能不是越多越好；
+可以创建多个工作台，例如学习工作台、工作工作台分开，不要全部挤压在同一页面。
+6.2 常见问题与解决方案
+问题：页面堆满大量组件，信息过载，不愿使用工作台 解决方案：精简模块，只保留刚需功能。
+问题：直接全盘套用网上模板，不做修改，不符合自身使用习惯 解决方案：模板仅作为底座，必须根据自己场景删减调整。
+问题：大量大图、动图素材，页面加载缓慢卡顿 解决方案：减少大体积素材，以简约风格为主。
+
+
+逐项验证新增、编辑、刷新后数据保留和备份恢复。
+
+支持页面风格切换 参考D:\work\EvoFlow\docs\1.png 这的风格并扩展
+
+刷新后数据是否还在；换电脑后怎么迁移；浏览器清理缓存会不会丢数据；是否需要部署到服务器供手机和多人访问。至少要做导入、导出和备份，重要数据不要只放在浏览器里。
+要做成一键导出导入 
+
+
+AI 工作台 里包含 “需求教练”模块提示词它不会一上来就写代码，而是像教练一样逐轮提问，最后再生成真正适合你的搭建提示词
+
+本地Skill 汇总管理 模块
+把我本地所有 Skill 做了统一汇总管理，一目了然，现在一句话就能生成一个skill，说实话，skill慢慢多起来以后，除了常用那几个，其他的真的转头就忘了咋用了。。【技能地图】这个模块也是整理了我之前的收纳skill，可以一键梳理本地 Skill 的基础信息，进行汇总分类
+
+
+
+
+集成下面这个功能
+技术方案：Chrome DevTools Protocol
+CDP（Chrome DevTools Protocol）就是 Chrome 浏览器的远程调试协议。你平时按 F12 打开的 DevTools 就是通过这个协议和 Chrome 通信的。
+用 CDP 可以做到：
+
+连接到一个正在运行的 Chrome 实例
+在任意页面里执行 JavaScript
+读取页面数据、模拟用户操作
+
+我们的做法是：
+
+启动一个开了 CDP 端口的 Chrome（使用 BOSS 专用 profile）
+通过 WebSocket 连接 CDP
+在 BOSS直聘页面里注入 JS，用 XMLHttpRequest 同步调用那个搜索 API
+拿到 JSON 结果，提取明文薪资和其他字段
+
+整个过程就像你在浏览器控制台里手动敲代码一样，只不过自动化了。
+Chrome profile：后来改成了隔离目录
+这里踩过一个坑。
+最早我想复用自己的 Chrome 登录态，甚至尝试过软链接 profile。这个思路看起来省事，但风险太高：CDP Chrome 如果指向主 Chrome profile，理论上能看到那一整个浏览器环境里的 cookie 和登录态。更糟的是，Chrome 自己也不喜欢多个进程同时碰同一个 profile，容易出现锁冲突或者登录态异常。
+所以现在的方案改成了持久隔离 profile：
+javascript 代码解读复制代码~/.boss-zhipin-scraper/chrome-profile
+
+--setup-chrome 会创建或复用这个目录，然后启动一个 BOSS 专用 Chrome。首次使用时，在这个专用 Chrome 里登录 zhipin.com。登录态会留在这个目录里，重启机器后也还在；重复执行 --setup-chrome 不会清空它。
+默认情况下，它不会软链接你的主 Chrome，也不会复制你的 Gmail、GitHub 或其他网站 cookie。只有你显式加 --copy-login-state，才会把主 Chrome 里的 Local State 和 Cookie 相关文件复制到这个隔离 profile。日常使用不建议这么做，手动在专用 Chrome 里登录更干净。
+一行命令抓取
+安装好后，抓取就一行命令：
+css 代码解读复制代码python3 scripts/boss_cdp_raw.py --keyword "AI Agent" --city 上海 --pages 3 --format csv
+
+输出：
+yaml 代码解读复制代码✓ AI Agent运行环境工程师 | 30-60K·15薪 | 上海 | 字节跳动 | 10000人以上
+✓ AI Agent 开发实习生 | 300-600元/天 | 上海 | 阿里巴巴集团 | 10000人以上
+✓ AI Agent工程师-Java | 35-55K | 上海 | 滴滴 | 1000-9999人
+...
+
+支持的功能
+搜索和筛选
+
+按关键词、城市搜索
+按公司规模、薪资范围、工作经验、学历筛选
+支持分页（每页 30 条，最多 10 页）
+
+输出格式
+
+JSON：结构化数据，方便程序处理
+CSV：UTF-8 BOM 编码，Excel 直接打开不乱码
+
+详情页抓取
+
+默认会抓每个岗位的完整 JD
+只想抓列表可以加 --no-detail
+自动提取技能标签
+进入详情页时会带上列表 API 返回的 securityId / lid 上下文
+
+增量写入
+
+每页抓完立即保存，Ctrl+C 中断不丢数据
+按 job_id 去重，重复运行不会产生重复数据
+默认输出到 ~/.boss-zhipin-scraper/job-result
+
+合并多次抓取
+css 代码解读复制代码# 先抓上海的
+python3 scripts/boss_cdp_raw.py --keyword "AI Agent" --city 上海 --pages 3 --output jobs.json
+# 再抓北京的，合并到同一个文件
+python3 scripts/boss_cdp_raw.py --keyword "AI Agent" --city 北京 --pages 3 --merge jobs.json --output jobs.json
+
+环境检查
+bash 代码解读复制代码python3 scripts/boss_cdp_raw.py --check
+
+一键检测 Chrome CDP 是否可用、Python 依赖是否齐全、BOSS直聘是否已登录。
+一键启动 Chrome
+arduino 代码解读复制代码python3 scripts/boss_cdp_raw.py --setup-chrome
+
+自动创建或复用隔离 profile，启动 Chrome CDP，然后等待你登录 zhipin.com。脚本会确认搜索接口能返回明文 salaryDesc 后再继续。
+Smoke test
+bash 代码解读复制代码python3 scripts/boss_cdp_raw.py --smoke-test
+
+这个命令只做一次真实 Chrome/CDP + BOSS 搜索 API 检查，不写结果文件。改代码或者换机器之后，可以先用它确认环境没问题。
+反爬策略
+BOSS直聘的反爬不弱，做了几件事来降低被封的风险：
+
+翻页间隔 12-22 秒随机延迟（模拟真人浏览节奏）
+单次最多 10 页（300 条），上限保护
+用真实 Chrome，但只使用 BOSS 专用 profile
+API 请求从页面内发起，和正常浏览行为一致
+默认禁用 DOM fallback，避免字体反爬导致的薪资乱码混进结果。只有显式加 --allow-dom-fallback 才会降级到 DOM 提取
+
+作为 Hermes Agent Skill 使用
+这个工具也打包成了 Hermes Agent Skill。装上之后，你直接跟 AI 说"帮我搜一下上海 AI Agent 岗位"，它会自动检查环境、启动 Chrome、运行抓取、返回结果。
+安装方式：
+ruby 代码解读复制代码# curl 一键安装
+mkdir -p ~/.hermes/skills/data-science/boss-zhipin-scraper/scripts && \
+curl -sL https://raw.githubusercontent.com/eatmoreduck/boss-zhipin-scraper/master/SKILL.md \
+  -o ~/.hermes/skills/data-science/boss-zhipin-scraper/SKILL.md && \
+curl -sL https://raw.githubusercontent.com/eatmoreduck/boss-zhipin-scraper/master/scripts/boss_cdp_raw.py \
+  -o ~/.hermes/skills/data-science/boss-zhipin-scraper/scripts/boss_cdp_raw.py
+
+安装和使用
+bash 代码解读复制代码# 克隆仓库
+git clone https://github.com/eatmoreduck/boss-zhipin-scraper.git
+cd boss-zhipin-scraper
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 启动 Chrome（首次使用）
+python3 scripts/boss_cdp_raw.py --setup-chrome
+# 首次使用时，在弹出的 BOSS 专用 Chrome 里登录 zhipin.com
+
+# 检查环境
+python3 scripts/boss_cdp_raw.py --check
+
+# 开始抓取
+python3 scripts/boss_cdp_raw.py --keyword "AI Agent" --city 上海 --pages 3 --format csv
+
+数据安全
+说几个需要注意的点：
+
+--setup-chrome 默认使用 ~/.boss-zhipin-scraper/chrome-profile，不软链接、不复制主 Chrome profile，也不会关闭你的主 Chrome
+--copy-login-state 是显式选项，不是默认行为。它会复制主 Chrome 的 Local State 和 Cookie 相关文件到隔离 profile；日常使用更建议在专用 Chrome 里手动登录
+需要清空 BOSS 专用浏览器登录态时，用 --reset-chrome-profile
+这个工具仅用于个人求职研究，不要拿去大规模爬取
+尊重 robots.txt 和网站使用条款
+
+作者：程序员多吃鸭eatmoreduck
+链接：https://juejin.cn/post/7651406306645917731
+来源：稀土掘金
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
