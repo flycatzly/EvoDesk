@@ -22,7 +22,7 @@ export function QuickAdd() {
   return (
     <div className="flex gap-2">
       <input
-        className="input px-3 py-1.5 text-sm w-48 md:w-64"
+        className="input px-3 py-1.5 text-sm w-32 md:w-64"
         placeholder="快速新增任务…"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
