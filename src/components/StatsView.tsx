@@ -34,9 +34,43 @@ export function StatsView({ data }: { data: StatsPayload }) {
   const totalDone = data.completions.reduce((a, d) => a + d.count, 0);
   const totalCost = data.costs.reduce((a, d) => a + d.cost, 0);
   const tplData = data.templates.map((t) => ({ name: t.name, pct: Math.round(t.successRate * 1000) / 10 }));
+  const week = data.week;
 
   return (
     <div>
+      {/* 本周复盘(本地时区,周一始):完成率 + 每日完成柱状 + 本周新增 */}
+      <section className="surface p-4 mb-4">
+        <h3 className="font-semibold text-sm mb-3">本周复盘</h3>
+        <div className="grid md:grid-cols-3 gap-4 items-center">
+          <div>
+            <div className="text-xs" style={{ color: "var(--muted)" }}>本周完成率</div>
+            <div className="text-3xl font-bold mt-1">
+              {week.completionRate === null ? "—" : `${Math.round(week.completionRate * 100)}%`}
+            </div>
+            <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>完成 /(完成 + 本周截止未完成)</div>
+          </div>
+          <div className="md:col-span-2">
+            <div className="text-xs mb-1" style={{ color: "var(--muted)" }}>每日完成(本地日)</div>
+            {week.dailyDone.every((d) => d.count === 0) ? (
+              <div className="text-sm py-6 text-center" style={{ color: "var(--muted)" }}>本周还没有完成记录</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={120}>
+                <BarChart data={week.dailyDone.map((d) => ({ date: mmdd(d.date), count: d.count }))} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
+                  <XAxis dataKey="date" tick={axisTick} axisLine={{ stroke: gridStroke }} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={axisTick} axisLine={{ stroke: gridStroke }} tickLine={false} />
+                  <Tooltip {...tooltipStyle} />
+                  <Bar dataKey="count" name="完成数" fill="var(--accent)" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+        <div className="text-xs mt-3" style={{ color: "var(--muted)" }}>
+          本周新增:任务 {week.newTasks} 条 · 灵感笔记 {week.newNotes} 条
+        </div>
+      </section>
+
       {/* 顶部三数字卡 */}
       <div className="grid grid-cols-3 gap-3 mb-4">
         <div className="surface p-4">
