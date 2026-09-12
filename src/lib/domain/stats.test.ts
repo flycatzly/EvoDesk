@@ -92,3 +92,37 @@ describe("buildStats.templates", () => {
     expect(stats.costs.every((d) => d.cost === 0)).toBe(true);
   });
 });
+
+describe("buildStats.week", () => {
+  const notes = async () => (await import("@/lib/db/schema")).notes;
+  it("完成率 = 本周完成 /(本周完成 + 本周截止未完成);每日完成按本地日;新增计数", async () => {
+    const notesTable = await notes();
+    db = createTestDb();
+    // 本周完成 1 条(周二),上周完成 1 条不计
+    addTask("done", "2026-09-08T02:00:00.000Z");
+    addTask("done", "2026-09-05T02:00:00.000Z");
+    // 本周截止未完成 1 条;已完成的截止任务与上周截止不算
+    db.insert(tasks).values({ id: crypto.randomUUID(), title: "u1", status: "ready", dueDate: "2026-09-10", createdAt: daysAgo(9), updatedAt: daysAgo(9) }).run();
+    db.insert(tasks).values({ id: crypto.randomUUID(), title: "u2", status: "ready", dueDate: "2026-09-02", createdAt: daysAgo(9), updatedAt: daysAgo(9) }).run();
+    // 本周新增任务/笔记
+    db.insert(tasks).values({ id: crypto.randomUUID(), title: "n1", status: "inbox", createdAt: "2026-09-09T01:00:00.000Z", updatedAt: "2026-09-09T01:00:00.000Z" }).run();
+    db.insert(notesTable).values({ id: crypto.randomUUID(), title: "灵感", body: "", tags: "[]", source: "manual", createdAt: "2026-09-09T02:00:00.000Z", updatedAt: "2026-09-09T02:00:00.000Z" }).run();
+    db.insert(notesTable).values({ id: crypto.randomUUID(), title: "上周灵感", body: "", tags: "[]", source: "manual", createdAt: "2026-09-01T02:00:00.000Z", updatedAt: "2026-09-01T02:00:00.000Z" }).run();
+
+    const { week } = buildStats(db, NOW, "Asia/Shanghai");
+    expect(week.completionRate).toBeCloseTo(0.5); // 1 done /(1 done + 1 未完成)
+    expect(week.dailyDone).toHaveLength(7);
+    expect(week.dailyDone[0].date).toBe("2026-09-07");
+    expect(week.dailyDone.find((d) => d.date === "2026-09-08")!.count).toBe(1);
+    expect(week.newTasks).toBe(2); // 本周完成的那条 + 显式新增的 n1
+    expect(week.newNotes).toBe(1);
+  });
+  it("本周无完成且无截止 → 完成率为 null;空库 dailyDone 全零", () => {
+    db = createTestDb();
+    const { week } = buildStats(db, NOW, "Asia/Shanghai");
+    expect(week.completionRate).toBeNull();
+    expect(week.dailyDone.every((d) => d.count === 0)).toBe(true);
+    expect(week.newTasks).toBe(0);
+    expect(week.newNotes).toBe(0);
+  });
+});
