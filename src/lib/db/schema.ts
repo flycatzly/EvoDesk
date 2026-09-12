@@ -210,3 +210,38 @@ export const evolutionEvents = sqliteTable("evolution_events", {
   reason: text("reason").notNull().default(""),
   detail: text("detail").notNull().default("{}"),
 });
+
+export const links = sqliteTable("links", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  url: text("url").notNull(),
+  category: text("category").notNull().default("常用"),
+  sort: integer("sort").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+});
+
+export const goals = sqliteTable("goals", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  category: text("category").notNull().default("custom"), // reading|fitness|project|custom
+  target: integer("target").notNull(),
+  current: integer("current").notNull().default(0),
+  unit: text("unit").notNull().default(""),
+  deadline: text("deadline"),
+  color: text("color"),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const canvases = sqliteTable("canvases", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  columns: text("columns").notNull().default("2"), // "2"|"3"
+  locked: integer("locked", { mode: "boolean" }).notNull().default(false),
+  layout: text("layout").notNull().default("[]"),
+  isTemplate: integer("is_template", { mode: "boolean" }).notNull().default(false),
+  shareToken: text("share_token"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
