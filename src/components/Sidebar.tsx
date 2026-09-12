@@ -7,7 +7,7 @@ const I = (d: string) => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
 );
 
-const GROUPS: { label: string; items: { href: string; label: string; icon: ReactNode; ready: boolean }[] }[] = [
+export const GROUPS: { label: string; items: { href: string; label: string; icon: ReactNode; ready: boolean }[] }[] = [
   { label: "核心", items: [
     { href: "/", label: "仪表盘", icon: I("M3 12l9-9 9 9M5 10v10h14V10"), ready: true },
     { href: "/inbox", label: "收件箱", icon: I("M22 12h-6l-2 3h-4l-2-3H2M5 5h14l3 7v7H2v-7z"), ready: true },
@@ -29,29 +29,39 @@ const GROUPS: { label: string; items: { href: string; label: string; icon: React
   ]},
 ];
 
-export function Sidebar() {
+/** 桌面侧栏与移动抽屉共用的导航组渲染:同数据、同高亮逻辑(pathname === href)。 */
+export function NavLinks({ variant }: { variant: "desktop" | "drawer" }) {
   const pathname = usePathname();
+  const pad = variant === "drawer" ? "py-2" : "py-1.5";
   return (
-    <aside className="hidden md:flex flex-col gap-4 w-52 shrink-0 p-4" style={{ borderRight: "1px solid var(--border)" }}>
-      <div className="text-lg font-bold" style={{ color: "var(--accent)" }}>EvoDesk</div>
+    <>
       {GROUPS.map((g) => (
         <div key={g.label}>
           <div className="text-xs uppercase mb-1" style={{ color: "var(--muted)" }}>{g.label}</div>
           {g.items.map((it) =>
             it.ready ? (
               <Link key={it.href} href={it.href}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm my-0.5"
+                className={`flex items-center gap-2 px-2 ${pad} rounded-lg text-sm my-0.5`}
                 style={pathname === it.href ? { background: "var(--surface-2)", color: "var(--accent)" } : { color: "var(--text)" }}>
                 {it.icon}{it.label}
               </Link>
             ) : (
-              <span key={it.href} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm my-0.5 opacity-40 cursor-not-allowed" title="后续版本上线">
+              <span key={it.href} className={`flex items-center gap-2 px-2 ${pad} rounded-lg text-sm my-0.5 opacity-40 cursor-not-allowed`} title="后续版本上线">
                 {it.icon}{it.label}
               </span>
             ),
           )}
         </div>
       ))}
+    </>
+  );
+}
+
+export function Sidebar() {
+  return (
+    <aside className="hidden md:flex flex-col gap-4 w-52 shrink-0 p-4" style={{ borderRight: "1px solid var(--border)" }}>
+      <div className="text-lg font-bold" style={{ color: "var(--accent)" }}>EvoDesk</div>
+      <NavLinks variant="desktop" />
     </aside>
   );
 }
