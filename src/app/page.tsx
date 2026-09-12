@@ -1,7 +1,8 @@
 import { getDb } from "@/lib/db/client";
-import { tasks, projects } from "@/lib/db/schema";
+import { tasks, projects, quickActions } from "@/lib/db/schema";
 import { tickRecurring } from "@/lib/domain/recurring";
 import { TaskCard } from "@/components/TaskCard";
+import { QuickActionsCard } from "@/components/QuickActionsCard";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,10 @@ export default function Dashboard() {
     { label: "待人工", value: allTasks.filter((t) => t.status === "waiting_human").length },
     { label: "收件箱", value: allTasks.filter((t) => t.status === "inbox").length },
   ];
+  // 仅启用项;排序与 /api/quick-actions GET 一致:sort asc → createdAt asc(enabled 已过滤)
+  const quickActionRows = (db.select().from(quickActions).all() as (typeof quickActions.$inferSelect)[])
+    .filter((a) => a.enabled)
+    .sort((a, b) => (a.sort !== b.sort ? a.sort - b.sort : a.createdAt.localeCompare(b.createdAt)));
 
   return (
     <div className="max-w-5xl">
@@ -38,6 +43,7 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+      <QuickActionsCard actions={quickActionRows} />
       <div className="grid md:grid-cols-2 gap-6">
         <section>
           <h2 className="font-semibold mb-2">今日清单(含延期置顶)</h2>
