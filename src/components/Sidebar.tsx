@@ -13,6 +13,7 @@ const GROUPS: { label: string; items: { href: string; label: string; icon: React
     { href: "/inbox", label: "收件箱", icon: I("M22 12h-6l-2 3h-4l-2-3H2M5 5h14l3 7v7H2v-7z"), ready: true },
     { href: "/tasks", label: "任务看板", icon: I("M4 4h6v16H4zM14 4h6v10h-6z"), ready: true },
     { href: "/calendar", label: "日历", icon: I("M8 2v4M16 2v4M3 8h18M5 4h14v18H5z"), ready: true },
+    { href: "/stats", label: "统计", icon: I("M6 20V10M12 20V4M18 20v-6"), ready: true },
   ]},
   { label: "AI", items: [
     { href: "/chat", label: "对话台", icon: I("M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z"), ready: true },
