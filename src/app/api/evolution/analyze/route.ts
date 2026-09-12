@@ -82,7 +82,10 @@ export async function POST(req: NextRequest) {
           reason: v.rationale.slice(0, 500), detail: JSON.stringify({ changes: v.changes }),
         }).run();
         created.push(id);
-      } catch { /* 单个变体 ops 非法 → 放弃该变体,继续 */ }
+      } catch (e) {
+        // 单个变体 ops 非法 → 放弃该变体,继续
+        console.warn("[evolution] 变体应用失败,已跳过:", String(e).slice(0, 200));
+      }
     }
     for (const r of parsed.data.retire_suggestions) {
       db.insert(evolutionEvents).values({
