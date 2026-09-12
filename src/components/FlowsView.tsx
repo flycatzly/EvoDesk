@@ -26,27 +26,29 @@ function parseSteps(raw: string): StepDef[] {
   }
 }
 
-// steps diff:以索引对齐的逐条标注(刻意不做复杂 diff 算法)
-// `=` 同名同类型;`~` 同名但 prompt 或 executorRole 变化(名称/类型变化的边缘情况也归为 ~);`+` 本方(变体)多出;`-` 对方(父版本)多出
+// steps diff:按计划规格「以 name 对齐」的逐条标注(刻意不做复杂 diff 算法)。
+// 展示顺序:先按变体自身步骤顺序列出 =/~/+(保留变体视角的步骤流),再按父版本顺序追加 `-` 移除项;
+// 因此顺序不再暗示位置对应,行内不带序号前缀。
+// 同名重复(add_step 复用同名等):配对父侧首个未消耗的同名出现,配不上的记 `+`。
+// `=` 同名同类型且未改动;`~` 同名但 type/prompt/executorRole 变化(标注具体变化);`+` 变体新增;`-` 父版本被移除
 type DiffLine = { mark: "=" | "~" | "+" | "-"; text: string };
 const DIFF_COLOR: Record<DiffLine["mark"], string> = { "=": "var(--muted)", "~": "var(--warn)", "+": "var(--ok)", "-": "var(--danger)" };
 
 function diffSteps(ours: StepDef[], parent: StepDef[]): DiffLine[] {
+  const unused = [...parent]; // 未配对的父步骤(配对后移除,保持父版本顺序)
   const lines: DiffLine[] = [];
-  const total = Math.max(ours.length, parent.length);
-  for (let i = 0; i < total; i++) {
-    const a = ours[i];
-    const b = parent[i];
-    if (a && !b) { lines.push({ mark: "+", text: `#${i + 1} ${a.name}(${a.type})` }); continue; }
-    if (!a && b) { lines.push({ mark: "-", text: `#${i + 1} ${b.name}(${b.type})` }); continue; }
+  for (const a of ours) {
+    const idx = unused.findIndex((b) => b.name === a.name);
+    if (idx < 0) { lines.push({ mark: "+", text: `${a.name}(${a.type})` }); continue; }
+    const [b] = unused.splice(idx, 1);
     const changes: string[] = [];
-    if (a.name !== b.name) changes.push(`名称 ${b.name}→${a.name}`);
     if (a.type !== b.type) changes.push(`类型 ${b.type}→${a.type}`);
     if ((a.prompt ?? "") !== (b.prompt ?? "")) changes.push("prompt 改动");
     if ((a.executorRole ?? "") !== (b.executorRole ?? "")) changes.push(`角色 ${b.executorRole ?? "-"}→${a.executorRole ?? "-"}`);
-    if (changes.length === 0) lines.push({ mark: "=", text: `#${i + 1} ${a.name}(${a.type})` });
-    else lines.push({ mark: "~", text: `#${i + 1} ${a.name}(${a.type}):${changes.join("、")}` });
+    if (changes.length === 0) lines.push({ mark: "=", text: `${a.name}(${a.type})` });
+    else lines.push({ mark: "~", text: `${a.name}(${a.type}):${changes.join("、")}` });
   }
+  for (const b of unused) lines.push({ mark: "-", text: `${b.name}(${b.type})` });
   return lines;
 }
 
