@@ -48,7 +48,7 @@ describe("collectWidgetData", () => {
     const db = createTestDb();
     seedIfEmpty(db);
     const bundle = collectWidgetData(db, ["goals"], "", NOW);
-    expect(Object.keys(bundle)).toEqual(["goalsWidget"]);
+    expect(Object.keys(bundle)).toEqual(["goals"]);
   });
   it("计数与分组正确:新增任务/笔记/链接后 counters 与 links.groups 反映", () => {
     const db = createTestDb();
