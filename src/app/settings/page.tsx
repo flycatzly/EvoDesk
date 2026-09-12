@@ -1,14 +1,12 @@
 import { getDb } from "@/lib/db/client";
-import { settings } from "@/lib/db/schema";
+import { readSettingsKv } from "@/lib/db/read-settings";
 import { SettingsForm } from "@/components/SettingsForm";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 export const dynamic = "force-dynamic";
 
 export default function SettingsPage() {
-  const rows = getDb().select().from(settings).all() as { key: string; value: string }[];
-  const kv: Record<string, unknown> = {};
-  for (const r of rows) { try { kv[r.key] = JSON.parse(r.value); } catch { kv[r.key] = r.value; } }
+  const kv = readSettingsKv(getDb());
   return (
     <div className="max-w-3xl">
       <h1 className="text-xl font-bold mb-4">设置</h1>

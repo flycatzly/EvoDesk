@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { renderQuickPayload, previewQuickAction, runCommandAction, resolveWorkingDir } from "./quick-actions";
+import { renderQuickPayload, runCommandAction, resolveWorkingDir } from "./quick-actions";
 import path from "node:path";
 import fs from "node:fs";
 
@@ -17,19 +17,6 @@ describe("renderQuickPayload", () => {
   it("url 型原样返回,不渲染", () => {
     const payload = "https://example.com/?q={{task.title}}";
     expect(renderQuickPayload({ type: "url", payload }, { title: "X" })).toBe(payload);
-  });
-});
-
-describe("previewQuickAction", () => {
-  it("command 型:风险命中 + needsWhitelist true", () => {
-    const p = previewQuickAction({ type: "command", payload: "Remove-Item {{task.title}} -Recurse -Force" }, [cwd]);
-    expect(p.needsWhitelist).toBe(true);
-    expect(p.risks.length).toBeGreaterThan(0);
-  });
-  it("url 型:风险为空 + needsWhitelist false", () => {
-    const p = previewQuickAction({ type: "url", payload: "https://example.com" }, [cwd]);
-    expect(p.risks).toEqual([]);
-    expect(p.needsWhitelist).toBe(false);
   });
 });
 

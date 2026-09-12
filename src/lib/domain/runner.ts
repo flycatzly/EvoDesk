@@ -114,6 +114,7 @@ function requireCurrent(db: Db, runId: string, stepIndex: number) {
   return cur;
 }
 
+// 测试与潜在非流式路径复用;生产 llm 步骤走 stream 路由(2026-09 M5 审查记录)
 export async function runLlmStep(db: Db, runId: string, stepIndex: number, fetchImpl?: typeof fetch) {
   const cur = requireCurrent(db, runId, stepIndex);
   if (cur.executorType !== "llm" || cur.status !== "pending") throw new RunError("当前步骤不可执行 LLM");

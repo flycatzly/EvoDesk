@@ -2,8 +2,6 @@ import { spawn, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-export interface LaunchSpec { profileName: string; apiBase: string; apiKeyRef: string; model: string | null; workdir: string }
-
 export function sanitizeModelName(model: string): string {
   return model.replace(/[[\]*?"<>|/:\\]/g, "_");
 }
@@ -11,6 +9,21 @@ export function sanitizeModelName(model: string): string {
 /** 模型名白名单:仅字母数字与 . _ : @ -。供 spawnClaude 与路由层(Task 6)复用。 */
 export function isValidModelName(model: string): boolean {
   return /^[A-Za-z0-9._:@-]+$/.test(model);
+}
+
+/** launch 型 payload 解析({profile_id, model?, workdir?});非法 JSON/缺 profile_id 返回 null。
+ * preview/confirm 两路由共用:解析失败由调用方映射状态码(两处现行为一致,均为 400),勿在本函数内改语义。 */
+export function parseLaunchPayload(payload: string): { profile_id: string; model?: string; workdir?: string } | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const o = parsed as Record<string, unknown>;
+  if (typeof o.profile_id !== "string" || !o.profile_id.trim()) return null;
+  return { profile_id: o.profile_id, model: typeof o.model === "string" ? o.model : undefined, workdir: typeof o.workdir === "string" ? o.workdir : undefined };
 }
 
 export function buildLaunchSettings(raw: string, model: string | null): string {

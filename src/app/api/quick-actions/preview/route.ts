@@ -6,25 +6,11 @@ import { quickActions, providerProfiles } from "@/lib/db/schema";
 import { renderQuickPayload } from "@/lib/domain/quick-actions";
 import { scanRisk } from "@/lib/domain/script-security";
 import { resolveWorkingDir } from "@/lib/domain/quick-actions";
-import { buildLaunchSettings, spawnClaude } from "@/lib/domain/launch";
+import { buildLaunchSettings, spawnClaude, parseLaunchPayload } from "@/lib/domain/launch";
 import { resolveApiKey } from "@/lib/llm/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-/** launch payload 解析:非法或缺 profile_id 返回 null(调用方回 400) */
-function parseLaunchPayload(payload: string): { profile_id: string; model?: string; workdir?: string } | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(payload);
-  } catch {
-    return null;
-  }
-  if (!parsed || typeof parsed !== "object") return null;
-  const o = parsed as Record<string, unknown>;
-  if (typeof o.profile_id !== "string" || !o.profile_id.trim()) return null;
-  return { profile_id: o.profile_id, model: typeof o.model === "string" ? o.model : undefined, workdir: typeof o.workdir === "string" ? o.workdir : undefined };
-}
 
 export async function POST(req: NextRequest) {
   const raw = await req.json().catch(() => null);

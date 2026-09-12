@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/db/client";
-import { tasks, projects, quickActions, settings, flowRuns, flowTemplates } from "@/lib/db/schema";
+import { tasks, projects, quickActions, flowRuns, flowTemplates } from "@/lib/db/schema";
+import { readSettingsKv } from "@/lib/db/read-settings";
 import { tickRecurring } from "@/lib/domain/recurring";
 import { tzToday } from "@/lib/domain/tz";
 import { TaskCard } from "@/components/TaskCard";
@@ -16,10 +17,8 @@ function nowMs(): number {
 export default function Dashboard() {
   const db = getDb();
   tickRecurring(db);
-  // 读 settings KV(模式同 /settings 页):timezone 决定"今天"分桶边界(空=系统本地)
-  const settingRows = db.select().from(settings).all() as { key: string; value: string }[];
-  const kv: Record<string, unknown> = {};
-  for (const r of settingRows) { try { kv[r.key] = JSON.parse(r.value); } catch { kv[r.key] = r.value; } }
+  // 读 settings KV(timezone 决定"今天"分桶边界,空=系统本地)
+  const kv = readSettingsKv(db);
   const todayStr = tzToday(typeof kv.timezone === "string" ? kv.timezone : "");
   const allTasks = db.select().from(tasks).all() as (typeof tasks.$inferSelect)[];
   const projectRows = db.select().from(projects).all() as (typeof projects.$inferSelect)[];
@@ -47,7 +46,7 @@ export default function Dashboard() {
   const timeoutTasks = allTasks.filter(
     (t) => t.status === "waiting_human" && nowMs() - new Date(t.updatedAt).getTime() > timeoutHours * 3600_000
   );
-  // 本周(近 7 天)成本:startedAt 为 UTC-ISO,字典序比较即时间序
+  // 近 7 天(滚动窗口,非日历周)成本:startedAt 为 UTC-ISO,字典序比较即时间序
   const flowRunRows = db.select().from(flowRuns).all() as (typeof flowRuns.$inferSelect)[];
   const weekAgoIso = new Date(nowMs() - 7 * 24 * 3600_000).toISOString();
   const weekCostUsd = flowRunRows.filter((r) => r.startedAt > weekAgoIso).reduce((s, r) => s + r.totalCostUsd, 0);
@@ -75,7 +74,7 @@ export default function Dashboard() {
     riskItems.push({
       kind: "budget",
       label: "成本预算超支",
-      detail: `本周已花费 $${weekCostUsd.toFixed(2)} / 预算 $${costBudgetUsd.toFixed(2)}`,
+      detail: `近 7 天已花费 $${weekCostUsd.toFixed(2)} / 预算 $${costBudgetUsd.toFixed(2)}`,
     });
   }
   if (lowPerfTemplates.length > 0) {

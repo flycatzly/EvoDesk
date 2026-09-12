@@ -1,6 +1,6 @@
 import path from "node:path";
 import { renderPrompt } from "@/lib/domain/executor-resolve";
-import { scanRisk, checkWhitelist, DEFAULT_WHITELIST } from "@/lib/domain/script-security";
+import { checkWhitelist, DEFAULT_WHITELIST } from "@/lib/domain/script-security";
 import { executeScript } from "@/lib/domain/script-runner";
 
 export interface QuickActionRow { id: string; name: string; type: string; payload: string; shell: string | null; enabled: boolean }
@@ -8,12 +8,6 @@ export interface QuickActionRow { id: string; name: string; type: string; payloa
 export function renderQuickPayload(action: { type: string; payload: string }, task?: { title: string }): string {
   if (action.type === "command") return renderPrompt(action.payload, { task: { title: task?.title ?? "", description: "" }, prevOutput: "" });
   return action.payload;
-}
-
-export function previewQuickAction(action: { type: string; payload: string }, workingDirs: string[]): { rendered: string; risks: string[]; needsWhitelist: boolean } {
-  void workingDirs;
-  const rendered = renderQuickPayload(action);
-  return { rendered, risks: action.type === "command" ? scanRisk(rendered) : [], needsWhitelist: action.type === "command" };
 }
 
 export async function runCommandAction(command: string, shell: string, workingDir: string): Promise<{ output: string; exitCode: number | null; durationMs: number; status: "ok" | "failed" | "timeout" }> {
