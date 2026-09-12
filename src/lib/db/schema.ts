@@ -247,3 +247,34 @@ export const canvases = sqliteTable("canvases", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const jobs = sqliteTable("jobs", {
+  id: text("id").primaryKey(),
+  jobId: text("job_id").notNull(), // BOSS encryptJobId,按其去重
+  title: text("title").notNull(),
+  salaryDesc: text("salary_desc").notNull().default(""),
+  city: text("city").notNull().default(""),
+  area: text("area").notNull().default(""),
+  brand: text("brand").notNull().default(""),
+  scale: text("scale").notNull().default(""),
+  experience: text("experience").notNull().default(""),
+  degree: text("degree").notNull().default(""),
+  labels: text("labels").notNull().default("[]"),
+  jd: text("jd").notNull().default(""),
+  url: text("url").notNull().default(""),
+  securityId: text("security_id"),
+  lid: text("lid"),
+  searchMeta: text("search_meta").notNull().default("{}"), // 抓取来源(关键词/城市/时间)
+  fetchedAt: text("fetched_at").notNull(),
+});
+
+export const jobsRuns = sqliteTable("jobs_runs", {
+  id: text("id").primaryKey(),
+  kind: text("kind").notNull().default("scrape"), // scrape|check|setup|smoke
+  params: text("params").notNull().default("{}"),
+  status: text("status").notNull().default("running"), // running|ok|failed|timeout
+  output: text("output").notNull().default(""),
+  jobCount: integer("job_count").notNull().default(0),
+  startedAt: text("started_at").notNull(),
+  finishedAt: text("finished_at"),
+});
