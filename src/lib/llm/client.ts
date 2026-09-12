@@ -44,7 +44,12 @@ export async function callLlmWithRetry(cfg: LlmConfig, messages: LlmMessage[], f
   }
 }
 
+/** 去除 Claude Code 式上下文提示后缀(如 mimo-v2.5[1M] → mimo-v2.5):方括号段不属于 API 模型名,原样发送会被供应商拒绝。 */
+export function stripModelSuffix(model: string): string {
+  return model.replace(/\[[^\]]*\]\s*$/, "").trim();
+}
+
 export function executorLlmConfig(ex: { type: string; model: string | null; apiBase: string | null; protocol: string | null; apiKeyRef: string | null }): LlmConfig {
   if (ex.type !== "llm" || !ex.model || !ex.apiBase) throw new Error(`执行器未配置模型或端点`);
-  return { model: ex.model, apiBase: ex.apiBase, protocol: ex.protocol === "anthropic" ? "anthropic" : "openai", apiKey: resolveApiKey(ex.apiKeyRef) };
+  return { model: stripModelSuffix(ex.model), apiBase: ex.apiBase, protocol: ex.protocol === "anthropic" ? "anthropic" : "openai", apiKey: resolveApiKey(ex.apiKeyRef) };
 }

@@ -45,3 +45,17 @@ describe("callLlm", () => {
     expect(f).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("stripModelSuffix / executorLlmConfig 上下文后缀剥离", () => {
+  it("stripModelSuffix:[1M] 后缀剥离,无后缀原样", async () => {
+    const { stripModelSuffix } = await import("./client");
+    expect(stripModelSuffix("mimo-v2.5[1M]")).toBe("mimo-v2.5");
+    expect(stripModelSuffix("glm-4-flash")).toBe("glm-4-flash");
+    expect(stripModelSuffix("mimo-v2.5-pro [1M]")).toBe("mimo-v2.5-pro");
+  });
+  it("executorLlmConfig:model 带上下文后缀时剥落后传给 API", async () => {
+    const { executorLlmConfig } = await import("./client");
+    const cfg = executorLlmConfig({ type: "llm", model: "mimo-v2.5[1M]", apiBase: "https://x", protocol: null, apiKeyRef: "plain:k" });
+    expect(cfg.model).toBe("mimo-v2.5");
+  });
+});

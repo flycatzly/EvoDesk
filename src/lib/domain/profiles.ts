@@ -5,6 +5,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import type { Db } from "@/lib/db/test-util";
 import { providerProfiles, executors } from "@/lib/db/schema";
+import { stripModelSuffix } from "@/lib/llm/client";
 
 export interface ProfileCandidate { model: string; alias: string; tier: "primary" | "opus" | "sonnet" | "haiku" }
 export interface ParsedProfile {
@@ -33,7 +34,10 @@ export function parseProfileText(name: string, raw: string): ParsedProfile {
   if (!apiBase) throw new Error("缺少 ANTHROPIC_BASE_URL");
   const candidates: ProfileCandidate[] = [];
   // 每个档位至多一条候选;不同档位同模型也各自保留(派生按 tier 取用,如 sonnet=primary 同款仍可派 sonnet 执行器)
-  const push = (model: string | undefined, alias: string | undefined, tier: ProfileCandidate["tier"]) => {
+  // 剥离 Claude Code 式上下文后缀(如 mimo-v2.5[1M]):方括号段不属于 API 模型名。
+  const push = (raw: string | undefined, alias: string | undefined, tier: ProfileCandidate["tier"]) => {
+    if (!raw) return;
+    const model = stripModelSuffix(raw);
     if (!model) return;
     candidates.push({ model, alias: alias && alias !== model ? alias : model, tier });
   };

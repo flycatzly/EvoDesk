@@ -83,3 +83,18 @@ describe("importProfilesFromDir / deriveExecutors", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe("导入时剥离上下文后缀(MiMo 式档案)", () => {
+  it("[1M] 后缀剥离且去重(sonnet 与 primary 同款只留 primary)", () => {
+    const p = parseProfileText("MiMo", JSON.stringify({ env: {
+      ANTHROPIC_AUTH_TOKEN: "sk-t", ANTHROPIC_BASE_URL: "https://api.xiaomimimo.com/anthropic",
+      ANTHROPIC_MODEL: "mimo-v2.5-pro",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "mimo-v2.5[1M]",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "mimo-v2.5-pro[1M]",
+    } }));
+    // T14 起候选按档位各自保留(同模型不同档位可派不同执行器),但所有模型名都必须已剥离后缀
+    expect(p.candidates.map((c) => c.model).join("|")).not.toContain("[");
+    expect(p.candidates.find((c) => c.tier === "opus")?.model).toBe("mimo-v2.5");
+    expect(p.candidates.find((c) => c.tier === "sonnet")?.model).toBe("mimo-v2.5-pro");
+  });
+});

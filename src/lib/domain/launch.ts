@@ -1,6 +1,7 @@
 import { spawn, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { stripModelSuffix } from "@/lib/llm/client";
 
 export function sanitizeModelName(model: string): string {
   return model.replace(/[[\]*?"<>|/:\\]/g, "_");
@@ -43,13 +44,15 @@ export function buildLaunchSettings(raw: string, model: string | null): string {
   return file;
 }
 
-export function spawnClaude(settingsPath: string, model: string | null, workdir: string, dryRun: boolean): Promise<{ status: "ok" | "failed"; detail: string }> {  // 防注入:spawn 带 shell:true 时参数经 cmd.exe 拼接,模型名若含 & | ; 等元字符即可执行任意命令
+export function spawnClaude(settingsPath: string, model: string | null, workdir: string, dryRun: boolean): Promise<{ status: "ok" | "failed"; detail: string }> {
+  // 与 LLM 调用一致:剥离 Claude Code 式上下文后缀(如 mimo-v2.5[1M] → mimo-v2.5),否则 --model 会被供应商拒绝且方括号非法。
+  const cleanModel = model ? stripModelSuffix(model) : null;  // 防注入:spawn 带 shell:true 时参数经 cmd.exe 拼接,模型名若含 & | ; 等元字符即可执行任意命令
   // (模型名来自导入的 profile / 用户 payload)。白名单校验对 dryRun 也生效(fail closed):
   // 预览不得把不可安全执行的命令当作可运行命令展示。校验先于预检,非法名绝不触发 spawn。
-  if (model && !isValidModelName(model)) {
-    return Promise.resolve({ status: "failed", detail: `模型名含非法字符:${model}` });
+  if (cleanModel && !isValidModelName(cleanModel)) {
+    return Promise.resolve({ status: "failed", detail: `模型名含非法字符:${cleanModel}` });
   }
-  const args = ["--settings", settingsPath, ...(model ? ["--model", model] : [])];
+  const args = ["--settings", settingsPath, ...(cleanModel ? ["--model", cleanModel] : [])];
   if (dryRun) {
     // DryRun 的意义就是不依赖环境:不做 claude.cmd 预检,仅返回命令预览
     return Promise.resolve({ status: "ok", detail: `claude.cmd ${args.join(" ")} (工作目录:${workdir})` });
@@ -64,7 +67,7 @@ export function spawnClaude(settingsPath: string, model: string | null, workdir:
   // 仍需 shell:true:Node 在 Windows 上不经 shell 无法直接 CreateProcess 一个 .cmd(PATHEXT 解析)。
   // 注入面已收口:settingsPath 双引号包裹(路径含空格不断参数),模型名经 isValidModelName 白名单,
   // 两者拼接后不含可被 cmd.exe 解释的元字符。
-  const argStr = `--settings "${settingsPath}"${model ? ` --model ${model}` : ""}`;
+  const argStr = `--settings "${settingsPath}"${cleanModel ? ` --model ${cleanModel}` : ""}`;
   return new Promise((resolve) => {
     const child = spawn("claude.cmd", [argStr], { cwd: workdir, windowsHide: true, stdio: "ignore", shell: true });
     child.on("error", (e) => resolve({ status: "failed", detail: String(e).slice(0, 200) }));

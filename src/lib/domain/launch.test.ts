@@ -122,3 +122,12 @@ describe("sweepStaleSettings", () => {
     expect(sweepStaleSettings(5 * 60_000, path.join(os.tmpdir(), "evodesk-no-such-dir-qa"))).toBe(0);
   });
 });
+
+describe("spawnClaude 模型后缀剥离", () => {
+  it("dryRun 预览使用剥离后的模型名", async () => {
+    const r = await spawnClaude("C:/no/such/settings.json", "mimo-v2.5[1M]", "C:/wd", true);
+    expect(r.status).toBe("ok");
+    expect(r.detail).toContain("mimo-v2.5");
+    expect(r.detail).not.toContain("[1M]");
+  });
+});
