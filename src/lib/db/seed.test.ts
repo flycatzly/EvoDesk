@@ -58,7 +58,7 @@ describe("seedIfEmpty", () => {
     const qa = db.select().from(quickActions).all() as (typeof quickActions.$inferSelect)[];
     expect(qa.length).toBe(2);
     expect(qa.filter((a) => a.type === "url" && a.payload === "https://chat.z.ai").length).toBe(1);
-    expect(qa.filter((a) => a.type === "command" && a.payload === "Get-ChildItem data/sandbox" && a.shell === "powershell").length).toBe(1);
+    expect(qa.filter((a) => a.type === "command" && a.payload === "Get-ChildItem ." && a.shell === "powershell").length).toBe(1);
   });
 });
 
@@ -88,5 +88,19 @@ describe("部分库收敛(按表按名单补种)", () => {
     }
     seedIfEmpty(db);
     expect((db.select().from(flowTemplates).all() as unknown[]).length).toBe(4);
+  });
+});
+
+describe("存量快捷指令迁移", () => {
+  it("旧版查看沙盒目录的 data/sandbox 相对路径自动修正为 .", () => {
+    const db = createTestDb();
+    seedIfEmpty(db); // 先拿到 quick_actions 行
+    const stale = (db.select().from(quickActions).all() as (typeof quickActions.$inferSelect)[])
+      .find((a) => a.name === "查看沙盒目录")!;
+    db.update(quickActions).set({ payload: "Get-ChildItem data/sandbox" }).where(eq(quickActions.id, stale.id)).run();
+    seedIfEmpty(db); // 再次触发迁移
+    const fixed = (db.select().from(quickActions).all() as (typeof quickActions.$inferSelect)[])
+      .find((a) => a.id === stale.id)!;
+    expect(fixed.payload).toBe("Get-ChildItem .");
   });
 });

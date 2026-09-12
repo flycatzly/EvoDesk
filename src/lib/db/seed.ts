@@ -1,4 +1,5 @@
 import type { Db } from "./test-util";
+import { eq } from "drizzle-orm";
 import { flowTemplates, executors, projects, recurringRules, settings, tasks, chats, quickActions } from "./schema";
 
 const now = () => new Date().toISOString();
@@ -121,7 +122,15 @@ export function seedIfEmpty(db: Db): void {
     const n = now();
     db.insert(quickActions).values([
       { id: id(), name: "打开 Z.ai 控制台", type: "url", payload: "https://chat.z.ai", sort: 0, enabled: true, createdAt: n },
-      { id: id(), name: "查看沙盒目录", type: "command", payload: "Get-ChildItem data/sandbox", shell: "powershell", sort: 1, enabled: true, createdAt: n },
+      { id: id(), name: "查看沙盒目录", type: "command", payload: "Get-ChildItem .", shell: "powershell", sort: 1, enabled: true, createdAt: n },
     ]).run();
+  } else {
+    // 迁移:早期示例把相对路径写成 data/sandbox,而执行器工作目录本就是沙盒,导致路径翻倍。
+    const stale = db.select().from(quickActions).all() as (typeof quickActions.$inferSelect)[];
+    for (const a of stale) {
+      if (a.name === "查看沙盒目录" && a.payload === "Get-ChildItem data/sandbox") {
+        db.update(quickActions).set({ payload: "Get-ChildItem ." }).where(eq(quickActions.id, a.id)).run();
+      }
+    }
   }
 }
