@@ -17,6 +17,8 @@ export async function POST(req: NextRequest) {
   const chat = {
     id: crypto.randomUUID(),
     title: typeof body.title === "string" && body.title.trim() ? body.title.trim() : "新对话",
+    mode: body.mode === "coach" ? "coach" : "chat",
+    workdir: typeof body.workdir === "string" && body.workdir.trim() ? body.workdir.trim() : null,
     defaultExecutorId: typeof body.default_executor_id === "string" ? body.default_executor_id : null,
     createdAt: nowIso, updatedAt: nowIso,
   };

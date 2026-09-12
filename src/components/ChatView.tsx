@@ -4,12 +4,14 @@ import { useEffect, useRef, useState } from "react";
 
 interface Msg { id: string; role: string; content: string; model: string | null; costUsd: number }
 
-export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAnyModel }: {
-  chats: { id: string; title: string }[];
+export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAnyModel, mode = "chat", basePath = "/chat" }: {
+  chats: { id: string; title: string; workdir: string | null }[];
   activeId: string | null;
   initialMessages: Msg[];
   modelGroups: { executorId: string; label: string; group: string }[];
   hasAnyModel: boolean;
+  mode?: "chat" | "coach";
+  basePath?: string;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<Msg[]>(initialMessages);
@@ -17,7 +19,12 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
   const [streaming, setStreaming] = useState(false);
   const [executorId, setExecutorId] = useState<string>(modelGroups[0]?.executorId ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [mgrOpen, setMgrOpen] = useState(false);
+  // 会话管理:改名中的会话 id → 新标题;编辑目录中的会话 id → 目录草稿
+  const [renaming, setRenaming] = useState<Record<string, string>>({});
+  const [dirEditing, setDirEditing] = useState<Record<string, string>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
+  const activeChat = chats.find((c) => c.id === activeId) ?? null;
 
   const groups = [...new Set(modelGroups.map((g) => g.group))];
   // 自动滚动:新消息加入时贴底(流式 delta 期间由 done 分支兜底滚动)
@@ -72,6 +79,32 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
     }
   };
 
+  // —— 需求教练:轮次提示与最终提示词操作 ——
+  const rounds = messages.filter((m) => m.role === "assistant" && !m.id.startsWith("tmp-")).length;
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+  const finalReady = mode === "coach" && !!lastAssistant && lastAssistant.content.includes("最终搭建提示词");
+
+  const copyFinal = async () => {
+    if (!lastAssistant) return;
+    try {
+      await navigator.clipboard.writeText(lastAssistant.content);
+      setError(null);
+    } catch {
+      setError("复制失败,请手动选择文本");
+    }
+  };
+  const saveFinalNote = async () => {
+    if (!lastAssistant) return;
+    try {
+      const res = await fetch("/api/notes", { method: "POST", body: JSON.stringify({ title: `搭建提示词 ${new Date().toLocaleDateString("zh-CN")}`, body: lastAssistant.content }) });
+      if (!res.ok) throw new Error("save failed");
+      setError(null);
+      router.push("/notes");
+    } catch {
+      setError("存为笔记失败,请重试");
+    }
+  };
+
   // toTask 在组件内定义:setError 可达,失败落到既有 error state,而非未处理的 promise 拒绝
   const toTask = (content: string) => {
     fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: content.slice(0, 40), description: content }) })
@@ -79,13 +112,67 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
       .catch(() => setError("转为任务失败,请重试"));
   };
 
+  // —— 会话管理:新建 / 重命名 / 工作目录 / 删除 ——
+  const createChat = async () => {
+    try {
+      const res = await fetch("/api/chats", { method: "POST", body: JSON.stringify({ title: "新对话", mode }) });
+      const data = (await res.json().catch(() => null)) as { chat?: { id: string } } | null;
+      const newId = data?.chat?.id;
+      if (res.ok && newId) {
+        setMgrOpen(false);
+        router.push(`${basePath}?c=${newId}`);
+      } else setError("创建会话失败");
+    } catch {
+      setError("创建会话失败");
+    }
+  };
+  const patchChat = async (id: string, body: Record<string, unknown>, okText: string | null = null) => {
+    try {
+      const res = await fetch(`/api/chats/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "保存失败");
+        return null;
+      }
+      if (okText) setError(null);
+      router.refresh();
+      return (await res.json()) as { chat: { id: string; workdir: string | null }; workdirExists: boolean | null };
+    } catch {
+      setError("保存请求失败");
+      return null;
+    }
+  };
+  const deleteChat = async (id: string) => {
+    if (!window.confirm("删除该会话及全部消息?不可恢复。")) return;
+    try {
+      const res = await fetch(`/api/chats/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        setError("删除失败");
+        return;
+      }
+      setMgrOpen(false);
+      if (id === activeId) router.push(basePath); // 删的是当前会话:回列表首
+      else router.refresh();
+    } catch {
+      setError("删除请求失败");
+    }
+  };
+
   return (
     <div>
       <div className="flex gap-2 mb-3 flex-wrap items-center">
-        <select className="input px-2 py-1.5 text-sm" value={activeId ?? ""} onChange={(e) => router.push(`/chat?c=${e.target.value}`)}>
+        <select className="input px-2 py-1.5 text-sm max-w-56" value={activeId ?? ""} onChange={(e) => router.push(`${basePath}?c=${e.target.value}`)}>
           {chats.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
         </select>
-        <button onClick={() => router.push("/chat")} className="ghost-btn px-2 py-1.5 text-sm">+ 新对话</button>
+        <button onClick={() => void createChat()} className="ghost-btn px-2 py-1.5 text-sm">+ 新对话</button>
+        <button onClick={() => setMgrOpen((v) => !v)} className="ghost-btn px-2 py-1.5 text-sm" title="重命名 / 工作目录 / 删除">
+          会话管理
+        </button>
+        {activeChat?.workdir && (
+          <span className="text-xs px-2 py-1 rounded truncate max-w-64" style={{ background: "var(--surface-2)", color: "var(--muted)" }} title={activeChat.workdir}>
+            📂 {activeChat.workdir}
+          </span>
+        )}
         <select className="input px-2 py-1.5 text-sm ml-auto" value={executorId} onChange={(e) => setExecutorId(e.target.value)} disabled={!hasAnyModel}>
           {!hasAnyModel && <option value="">未配置模型</option>}
           {groups.map((g) => (
@@ -95,6 +182,99 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
           ))}
         </select>
       </div>
+      {mgrOpen && (
+        <div className="surface p-3 mb-3 space-y-2">
+          <div className="text-sm font-medium mb-1">会话管理(共 {chats.length} 个)</div>
+          {chats.length === 0 && <div className="text-xs" style={{ color: "var(--muted)" }}>暂无会话,点「+ 新对话」创建。</div>}
+          {chats.map((c) => {
+            const draft = renaming[c.id];
+            const dirDraft = dirEditing[c.id];
+            return (
+              <div key={c.id} className="rounded p-2" style={{ background: c.id === activeId ? "var(--surface-2)" : "transparent", border: "1px solid var(--border)" }}>
+                <div className="flex items-center gap-2 flex-wrap text-sm">
+                  {draft !== undefined ? (
+                    <>
+                      <input className="input text-sm flex-1 min-w-40" value={draft} autoFocus
+                        onChange={(e) => setRenaming({ ...renaming, [c.id]: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && draft.trim()) {
+                            void patchChat(c.id, { title: draft.trim() });
+                            const n = { ...renaming };
+                            delete n[c.id];
+                            setRenaming(n);
+                          }
+                        }}
+                      />
+                      <button className="accent-btn text-xs px-2 py-1" disabled={!draft.trim()}
+                        onClick={() => { void patchChat(c.id, { title: draft.trim() }); const n = { ...renaming }; delete n[c.id]; setRenaming(n); }}>保存</button>
+                      <button className="ghost-btn text-xs px-2 py-1" onClick={() => { const n = { ...renaming }; delete n[c.id]; setRenaming(n); }}>取消</button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="font-medium hover:opacity-80 text-left truncate max-w-48" title="切换到该会话"
+                        onClick={() => { setMgrOpen(false); router.push(`${basePath}?c=${c.id}`); }}>
+                        {c.title}{c.id === activeId ? " ·当前" : ""}
+                      </button>
+                      <span className="ml-auto flex gap-1.5">
+                        <button className="ghost-btn text-xs px-2 py-1" onClick={() => setRenaming({ ...renaming, [c.id]: c.title })}>重命名</button>
+                        <button className="ghost-btn text-xs px-2 py-1" onClick={() => {
+                          const n = { ...dirEditing };
+                          if (dirDraft !== undefined) delete n[c.id];
+                          else n[c.id] = c.workdir ?? "";
+                          setDirEditing(n);
+                        }}>
+                          {dirDraft !== undefined ? "收起目录" : "工作目录"}
+                        </button>
+                        <button className="ghost-btn text-xs px-2 py-1" style={{ color: "var(--danger)" }} onClick={() => void deleteChat(c.id)}>删除</button>
+                      </span>
+                    </>
+                  )}
+                </div>
+                {dirDraft !== undefined && (
+                  <div className="mt-2 flex items-center gap-2 flex-wrap">
+                    <input className="input text-xs flex-1 min-w-56" placeholder="本地工作目录绝对路径,如 D:\\work\\my-project"
+                      value={dirDraft} onChange={(e) => setDirEditing({ ...dirEditing, [c.id]: e.target.value })} />
+                    <button className="accent-btn text-xs px-2 py-1" disabled={!dirDraft.trim() && c.workdir === null}
+                      onClick={async () => {
+                        const out = await patchChat(c.id, { workdir: dirDraft.trim() || null }, "saved");
+                        if (out !== null) {
+                          const n = { ...dirEditing };
+                          delete n[c.id];
+                          setDirEditing(n);
+                          if (dirDraft.trim() && out.workdirExists === false) setError("已保存,但该目录当前不存在,请核对路径");
+                        }
+                      }}>
+                      保存目录
+                    </button>
+                    {c.workdir && (
+                      <button className="ghost-btn text-xs px-2 py-1"
+                        onClick={async () => {
+                          await patchChat(c.id, { workdir: null }, "saved");
+                          const n = { ...dirEditing };
+                          delete n[c.id];
+                          setDirEditing(n);
+                        }}>清除</button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {mode === "coach" && (
+        <div className="surface p-2.5 mb-3 flex items-center gap-2 text-xs flex-wrap">
+          <span style={{ color: "var(--accent)" }}>🏃 需求教练</span>
+          <span style={{ color: "var(--muted)" }}>教练逐轮提问(最多 6 轮),信息足够后输出「最终搭建提示词」。</span>
+          <span className="ml-auto" style={{ color: "var(--muted)" }}>已进行 {rounds} 轮</span>
+          {finalReady && (
+            <>
+              <button className="accent-btn text-xs px-2 py-1" onClick={() => void copyFinal()}>复制提示词</button>
+              <button className="ghost-btn text-xs px-2 py-1" onClick={() => void saveFinalNote()}>存为笔记</button>
+            </>
+          )}
+        </div>
+      )}
       <div className="surface p-4 mb-3 space-y-3 min-h-60 max-h-[60vh] overflow-auto">
         {!hasAnyModel && (
           <div className="text-sm" style={{ color: "var(--muted)" }}>

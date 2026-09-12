@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type GoalRow = {
   id: string; title: string; category: string; target: number; current: number;
@@ -18,7 +18,7 @@ export function GoalsView() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/goals${showArchived ? "?archived=1" : ""}`);
       const data = (await res.json()) as { goals?: GoalRow[] };
@@ -28,8 +28,12 @@ export function GoalsView() {
     } finally {
       setLoading(false);
     }
-  };
-  useEffect(() => { void load(); }, [showArchived]);
+  }, [showArchived]);
+  // 下一帧加载:避免 effect 内同步 setState(react-hooks/set-state-in-effect)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => { void load(); });
+    return () => cancelAnimationFrame(raf);
+  }, [load]);
 
   const add = async () => {
     setError(null);

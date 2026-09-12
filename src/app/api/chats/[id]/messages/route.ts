@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db/client";
 import { chats, chatMessages, executors } from "@/lib/db/schema";
 import { executorLlmConfig } from "@/lib/llm/client";
 import { streamLlm } from "@/lib/llm/stream";
+import { coachRoundsUsed, coachSystemPrompt } from "@/lib/domain/coach";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +42,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const history = db.select().from(chatMessages).where(eq(chatMessages.chatId, id)).orderBy(asc(chatMessages.createdAt)).all() as (typeof chatMessages.$inferSelect)[];
   // 历史窗口:只送最近 40 条,防 token 随会话长度线性增长;system 始终单独保留,不占窗口
   const windowed = history.slice(-40);
-  const llmMessages = [{ role: "system" as const, content: SYSTEM }, ...windowed.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))];
+  // system:默认助手 / 需求教练(chats.mode='coach',轮次 = 历史 assistant 消息数);
+  // 会话绑定了本地工作目录时附加目录上下文,让 AI 知道当前在哪个项目里工作
+  const baseSystem = chat.mode === "coach" ? coachSystemPrompt(coachRoundsUsed(history.filter((m) => m.role === "assistant").length)) : SYSTEM;
+  const system = chat.workdir ? `${baseSystem}\n\n当前会话绑定的本地工作目录:${chat.workdir}(用户本地机器上的实际路径;涉及文件/命令建议时以该目录为基准)。` : baseSystem;
+  const llmMessages = [{ role: "system" as const, content: system }, ...windowed.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))];
   // streamLlm 内置 120s abort(chats 无 runner 清扫耦合,无阈值约束)
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

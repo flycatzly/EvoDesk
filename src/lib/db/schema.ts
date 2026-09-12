@@ -147,6 +147,8 @@ export const providerProfiles = sqliteTable("provider_profiles", {
 export const chats = sqliteTable("chats", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
+  mode: text("mode").notNull().default("chat"), // chat|coach(需求教练)
+  workdir: text("workdir"), // 绑定的本地工作目录(绝对路径,可空)
   defaultExecutorId: text("default_executor_id"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),

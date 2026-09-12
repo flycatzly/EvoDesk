@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Snapshot = { name: string; sizeBytes: number; ts: string };
 
@@ -10,7 +10,7 @@ export function BackupForm() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const res = await fetch("/api/backup/snapshot");
       const data = (await res.json()) as { snapshots?: Snapshot[] };
@@ -18,8 +18,12 @@ export function BackupForm() {
     } catch {
       /* 列表加载失败不阻塞主功能 */
     }
-  };
-  useEffect(() => { void load(); }, []);
+  }, []);
+  // 下一帧加载:避免 effect 内同步 setState(react-hooks/set-state-in-effect)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => { void load(); });
+    return () => cancelAnimationFrame(raf);
+  }, [load]);
 
   const say = (kind: "ok" | "err", text: string) => {
     setMsg({ kind, text });

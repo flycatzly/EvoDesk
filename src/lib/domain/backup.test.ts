@@ -70,7 +70,6 @@ describe("snapshot / restore / list / clean", () => {
     const dir = mkdtempSync(join(tmpdir(), "evodesk-backup-"));
     expect(backupDir()).toContain("backups");
 
-    const before = (db.select().from(tasks).all() as unknown[]).length;
     const snap = await createSnapshot(db, dir);
     expect(existsSync(join(dir, snap))).toBe(true);
 

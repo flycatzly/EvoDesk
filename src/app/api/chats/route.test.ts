@@ -235,3 +235,65 @@ describe("POST /api/chats/[id]/messages", () => {
     expect(body.messages.at(-1)!.content).toBe("新消息");
   });
 });
+
+describe("需求教练模式", () => {
+  it("POST mode=coach 创建教练会话;消息请求的 system 为教练提示词(含轮次与规则)", async () => {
+    const res0 = await CREATE(req("/api/chats", { method: "POST", body: JSON.stringify({ mode: "coach", title: "需求教练" }) }));
+    const chat = (await res0.json() as { chat: { id: string; mode: string } }).chat;
+    expect(chat.mode).toBe("coach");
+    enable("快速模型");
+    const f = stubLlm("你想用工作台解决什么痛点?");
+    const res = await SEND_MSG(chat.id, { content: "我想搭一个学习工作台" });
+    expect(res.status).toBe(200);
+    await res.text();
+    const body = JSON.parse((f.mock.calls[0][1] as RequestInit).body as string) as { messages: { role: string; content: string }[] };
+    expect(body.messages[0].role).toBe("system");
+    expect(body.messages[0].content).toContain("需求教练");
+    expect(body.messages[0].content).toContain("还剩最多 6 轮");
+    // 普通会话不受影响:system 仍是默认助手
+    const chat2 = await createChat({});
+    const f2 = stubLlm("好的");
+    await (await SEND_MSG(chat2.id, { content: "hi" })).text();
+    const body2 = JSON.parse((f2.mock.calls[0][1] as RequestInit).body as string) as { messages: { role: string; content: string }[] };
+    expect(body2.messages[0].content).toContain("AI 助手");
+  });
+});
+
+describe("会话管理(工作目录 + 重命名 + 删除)", () => {
+  it("POST 可带 workdir;PATCH 改名/换目录并回传 exists;DELETE 级联删消息", async () => {
+    const { PATCH, DELETE } = await import("./[id]/route");
+    const mk = (url: string, init?: ReqInit) => req(url, init);
+    const created = await createChat({ title: "项目会话", workdir: "D:/work/EvoFlow" });
+    expect(created.title).toBe("项目会话");
+
+    const p1 = await PATCH(mk(`/api/chats/${created.id}`, { method: "PATCH", body: JSON.stringify({ workdir: "Z:/no/such/dir" }) }), { params: Promise.resolve({ id: created.id }) });
+    const d1 = (await p1.json()) as { chat: { workdir: string | null }; workdirExists: boolean | null };
+    expect(d1.chat.workdir).toBe("Z:/no/such/dir");
+    expect(d1.workdirExists).toBe(false);
+
+    const p2 = await PATCH(mk(`/api/chats/${created.id}`, { method: "PATCH", body: JSON.stringify({ title: "改名会话", workdir: null }) }), { params: Promise.resolve({ id: created.id }) });
+    const d2 = (await p2.json()) as { chat: { title: string; workdir: string | null } };
+    expect(d2.chat.title).toBe("改名会话");
+    expect(d2.chat.workdir).toBeNull();
+
+    // 级联:先放一条消息再删
+    enable("快速模型");
+    stubLlm("ok");
+    await SEND_MSG(created.id, { content: "hi" });
+    expect(chatRowsOf(created.id).length).toBeGreaterThan(0);
+    expect((await DELETE(mk(`/api/chats/${created.id}`, { method: "DELETE" }), { params: Promise.resolve({ id: created.id }) })).status).toBe(200);
+    expect(chatRowsOf(created.id).length).toBe(0);
+    expect((await DELETE(mk(`/api/chats/${created.id}`, { method: "DELETE" }), { params: Promise.resolve({ id: created.id }) })).status).toBe(404);
+  });
+  it("PATCH 空补丁 400;目录上下文注入 system(openai 形态)", async () => {
+    const { PATCH } = await import("./[id]/route");
+    const created = await createChat({ workdir: "D:/work/EvoFlow" });
+    expect((await PATCH(req("/api/chats/x", { method: "PATCH", body: JSON.stringify({}) }), { params: Promise.resolve({ id: "x" }) })).status).toBe(400); // 空补丁先拦
+    expect((await PATCH(req("/api/chats/x", { method: "PATCH", body: JSON.stringify({ title: "t" }) }), { params: Promise.resolve({ id: "x" }) })).status).toBe(404);
+    enable("快速模型");
+    const f = stubLlm("好的");
+    await (await SEND_MSG(created.id, { content: "看看这个目录" })).text();
+    const body = JSON.parse((f.mock.calls[0][1] as RequestInit).body as string) as { messages: { role: string; content: string }[] };
+    expect(body.messages[0].content).toContain("D:/work/EvoFlow");
+  });
+});

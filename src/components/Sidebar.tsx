@@ -19,6 +19,8 @@ export const GROUPS: { label: string; items: { href: string; label: string; icon
   ]},
   { label: "AI", items: [
     { href: "/chat", label: "对话台", icon: I("M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z"), ready: true },
+    { href: "/coach", label: "需求教练", icon: I("M12 2l2.4 4.9 5.6.8-4 3.9.9 5.4-4.9-2.6-4.9 2.6.9-5.4-4-3.9 5.6-.8z"), ready: true },
+    { href: "/skills", label: "技能地图", icon: I("M12 2a4 4 0 014 4c0 1.5-.8 2.8-2 3.5V12h4a2 2 0 012 2v2a4 4 0 01-8 0v-2h-4v2a4 4 0 11-8 0"), ready: true },
   ]},
   { label: "资产", items: [
     { href: "/flows", label: "流程库", icon: I("M4 6h16M4 12h10M4 18h7"), ready: true },

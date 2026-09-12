@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type LinkRow = { id: string; title: string; url: string; category: string; sort: number };
 
@@ -14,7 +14,7 @@ export function LinksView() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const res = await fetch("/api/links");
       const data = (await res.json()) as { links?: LinkRow[] };
@@ -24,8 +24,12 @@ export function LinksView() {
     } finally {
       setLoading(false);
     }
-  };
-  useEffect(() => { void load(); }, []);
+  }, []);
+  // 下一帧加载:避免 effect 内同步 setState(react-hooks/set-state-in-effect)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => { void load(); });
+    return () => cancelAnimationFrame(raf);
+  }, [load]);
 
   const categories = [...new Set(links.map((l) => l.category))];
   const shown = filter ? links.filter((l) => l.category === filter) : links;
