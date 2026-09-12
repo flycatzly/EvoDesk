@@ -3,7 +3,7 @@ import { Clock } from "./Clock";
 import { MobileDrawer } from "./MobileNav";
 import { QuoteOfDay } from "./QuoteOfDay";
 import { QuickAdd } from "./QuickAdd";
-import { ThemeToggle } from "./ThemeToggle";
+import { ThemePicker } from "./ThemePicker";
 
 export function TopBar() {
   return (
@@ -13,7 +13,7 @@ export function TopBar() {
       <QuoteOfDay />
       <div className="ml-auto flex items-center gap-3">
         <QuickAdd />
-        <ThemeToggle />
+        <ThemePicker compact />
       </div>
     </header>
   );
