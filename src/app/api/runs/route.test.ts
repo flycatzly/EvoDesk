@@ -106,7 +106,9 @@ describe("POST /api/runs/[id]/steps/[n]/advance(llm 分支)", () => {
     db.update(stepRuns).set({ status: "running", startedAt: new Date().toISOString() }).where(eq(stepRuns.id, stepOf(runId, 0).id)).run();
     const res = await ADV(runId, 0, { action: "execute" });
     expect(res.status).toBe(409);
-    expect((await res.json()).error).toContain("该步骤正在执行");
+    const data = (await res.json()) as { error: string; code?: string };
+    expect(data.error).toContain("该步骤正在执行");
+    expect(data.code).toBe("step_running"); // 机器可读码,客户端双保险判断
   });
   it("非当前步骤 → 409", async () => {
     const runId = await startRun();

@@ -41,9 +41,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (action === "execute" && step.status === "pending") {
       return NextResponse.json({ step, run, stream: `/api/runs/${runId}/steps/${stepIndex}/stream` });
     }
-    // execute-on-running(回导航/刷新返回时步骤已在执行):与 stream 路由同文案,客户端据此转轮询恢复
+    // execute-on-running(回导航/刷新返回时步骤已在执行):409 附机器可读 code:step_running,客户端据此转轮询恢复
     if (action === "execute" && step.status === "running") {
-      return NextResponse.json({ error: "该步骤正在执行" }, { status: 409 });
+      return NextResponse.json({ error: "该步骤正在执行", code: "step_running" }, { status: 409 });
     }
     if (action === "retry" && step.status === "failed") return guard(() => retryStep(db, runId, stepIndex));
     if (action === "manual_override" && ["failed", "pending"].includes(step.status)) return guard(() => manualOverrideStep(db, runId, stepIndex, String(body.output ?? "")));

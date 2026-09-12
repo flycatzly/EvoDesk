@@ -140,7 +140,9 @@ describe("GET /api/runs/[id]/steps/[n]/stream", () => {
     db.update(stepRuns).set({ status: "running", startedAt: new Date().toISOString() }).where(eq(stepRuns.id, stepOf(runId, 0).id)).run();
     const res = await STREAM(STREAM_URL(runId), streamParams(runId));
     expect(res.status).toBe(409);
-    expect((await res.json() as { error: string }).error).toContain("正在执行");
+    const data = (await res.json()) as { error: string; code?: string };
+    expect(data.error).toContain("正在执行");
+    expect(data.code).toBe("step_running"); // 机器可读码,客户端双保险判断
     expect(stepOf(runId, 0).status).toBe("running"); // 未被扰动
   });
   it("done 落库前 run 被取消 → 不覆写 skipped 步骤,发送 canceled:true", async () => {

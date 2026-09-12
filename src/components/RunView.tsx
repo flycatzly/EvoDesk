@@ -111,7 +111,8 @@ export function RunView({ taskId: _taskId, taskStatus, run, steps, stepDefs }: {
       });
       const data = await res.json().catch(() => null) as Record<string, unknown> | null;
       if (res.ok && data) return data;
-      if (data && typeof data.error === "string" && data.error.includes("正在执行")) {
+      // 双保险:优先机器可读 code(step_running),保留文案 includes 兜底
+      if (data?.code === "step_running" || (typeof data?.error === "string" && data.error.includes("正在执行"))) {
         pollRunning();
         return null;
       }
@@ -338,26 +339,38 @@ export function RunView({ taskId: _taskId, taskStatus, run, steps, stepDefs }: {
           <button type="button" disabled={busy} className={ghostRow} style={{ color: "var(--danger)" }} onClick={cancelRun}>取消执行</button>
         </div>
       )}
-      <div className="mb-4">
-        {steps.map((s) => (
-          <div key={s.id} className="p-2 mb-1 text-sm" style={{ border: "1px solid var(--border)", borderColor: current?.id === s.id ? "var(--accent)" : "var(--border)", borderRadius: 10 }}>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span>{TYPE_ICON[s.executorType] ?? "•"}</span>
-              <span>{s.stepName}</span>
-              <span className="text-xs" style={{ color: s.status === "failed" ? "var(--danger)" : "var(--muted)" }}>{STEP_STATUS[s.status] ?? s.status}</span>
-              {s.status === "done" && (
-                <span className="text-xs" style={{ color: "var(--muted)" }}>
-                  {s.tokensIn > 0 && ` · ${s.tokensIn}→${s.tokensOut} tok`}
-                  {s.costUsd > 0 && ` · $${s.costUsd.toFixed(4)}`}
-                  {s.durationMs > 0 && ` · ${(s.durationMs / 1000).toFixed(1)}s`}
-                </span>
+      {/* 规格 §11:左时间线右操作区;窄屏 grid 单列自然堆叠。min-w-0 防 grid 子项被长 token 撑破 */}
+      <div className="grid md:grid-cols-[240px_1fr] gap-4">
+        <div className="min-w-0">
+          {steps.map((s) => (
+            <div key={s.id} className="p-2 mb-1 text-sm" style={{ border: "1px solid var(--border)", borderColor: current?.id === s.id ? "var(--accent)" : "var(--border)", borderRadius: 10 }}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>{TYPE_ICON[s.executorType] ?? "•"}</span>
+                <span>{s.stepName}</span>
+                <span className="text-xs" style={{ color: s.status === "failed" ? "var(--danger)" : "var(--muted)" }}>{STEP_STATUS[s.status] ?? s.status}</span>
+                {s.status === "done" && (
+                  <span className="text-xs" style={{ color: "var(--muted)" }}>
+                    {s.tokensIn > 0 && ` · ${s.tokensIn}→${s.tokensOut} tok`}
+                    {s.costUsd > 0 && ` · $${s.costUsd.toFixed(4)}`}
+                    {s.durationMs > 0 && ` · ${(s.durationMs / 1000).toFixed(1)}s`}
+                  </span>
+                )}
+                {s.rejected > 0 && <span className="text-xs" style={{ color: "var(--danger)" }}>被退回 {s.rejected} 次</span>}
+              </div>
+              {/* done 产出回看:明细(tokens/cost/duration)已在上方 meta 行,details 只放 output,避免重复展示 */}
+              {s.status === "done" && s.output && (
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-xs" style={{ color: "var(--muted)" }}>查看产出</summary>
+                  <pre className="text-xs whitespace-pre-wrap m-0 mt-1 surface p-2" style={{ color: "var(--muted)" }}>
+                    {s.output.length > 2000 ? `${s.output.slice(0, 2000)}…` : s.output}
+                  </pre>
+                </details>
               )}
-              {s.rejected > 0 && <span className="text-xs" style={{ color: "var(--danger)" }}>被退回 {s.rejected} 次</span>}
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+        <div className="min-w-0">{panel()}</div>
       </div>
-      {panel()}
       {taskStatus === "review" && (
         <div className="surface p-3">
           <div className="text-sm font-semibold mb-2">评审</div>

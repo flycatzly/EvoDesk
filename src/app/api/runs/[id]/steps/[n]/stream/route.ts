@@ -16,13 +16,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const db = getDb();
   const run = getRun(db, runId);
   const cur = getCurrentStep(db, runId);
-  const fail = (message: string, status: number) =>
-    new Response(JSON.stringify({ error: message }), { status, headers: { "content-type": "application/json" } });
+  // code 可选:机器可读错误码(如 step_running),供客户端双保险判断
+  const fail = (message: string, status: number, code?: string) =>
+    new Response(JSON.stringify(code ? { error: message, code } : { error: message }), { status, headers: { "content-type": "application/json" } });
   if (!run) return fail("run 不存在", 404);
   if (run.status !== "running") return fail("run 已结束或已取消", 409);
   if (!cur || cur.stepIndex !== stepIndex) return fail("该步骤不是当前步骤", 409);
   if (cur.executorType !== "llm") return fail("仅 llm 步骤支持流式执行", 409);
-  if (cur.status === "running") return fail("该步骤正在执行", 409);
+  if (cur.status === "running") return fail("该步骤正在执行", 409, "step_running");
   if (cur.status !== "pending") return fail(`步骤状态 ${cur.status} 不可执行`, 409);
 
   const step = getSteps(db, runId)[stepIndex];
