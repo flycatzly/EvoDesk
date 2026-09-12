@@ -158,8 +158,9 @@ class WsClient:
 
 # ---------- CDP HTTP 端点 ----------
 
-def cdp_http(path: str, timeout: float = 5.0) -> dict:
-    with urllib.request.urlopen(f"http://{CDP_HOST}:{CDP_PORT}{path}", timeout=timeout) as resp:
+def cdp_http(path: str, timeout: float = 5.0, method: str = "GET") -> dict:
+    req = urllib.request.Request(f"http://{CDP_HOST}:{CDP_PORT}{path}", method=method)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -188,14 +189,63 @@ def find_chrome() -> str:
 
 
 def open_zhipin_tab() -> tuple:
-    """打开(或复用)zhipin.com 标签页,返回 (WsClient, target_id)。"""
+    """打开(或复用)zhipin.com 标签页并确保页面就绪,返回 (WsClient, target_id)。
+
+    Chrome/Edge 110+ 的 /json/new 要求 PUT,旧版只收 GET —— 两种都试。"""
     for target in cdp_http("/json/list"):
         if target.get("type") == "page" and "zhipin.com" in target.get("url", ""):
-            ws = target["webSocketDebuggerUrl"].split(f"{CDP_HOST}:{CDP_PORT}", 1)[1]
-            return WsClient(CDP_HOST, CDP_PORT, ws), target["id"]
-    new_target = cdp_http(f"/json/new?{HOME_URL}")
-    ws = new_target["webSocketDebuggerUrl"].split(f"{CDP_HOST}:{CDP_PORT}", 1)[1]
-    return WsClient(CDP_HOST, CDP_PORT, ws), new_target["id"]
+            ws_path = target["webSocketDebuggerUrl"].split(f"{CDP_HOST}:{CDP_PORT}", 1)[1]
+            ws = WsClient(CDP_HOST, CDP_PORT, ws_path)
+            ensure_zhipin_page(ws)
+            return ws, target["id"]
+    new_target = None
+    try:
+        new_target = cdp_http(f"/json/new?{HOME_URL}")
+    except urllib.error.HTTPError:
+        new_target = cdp_http(f"/json/new?{HOME_URL}", method="PUT")
+    ws_path = new_target["webSocketDebuggerUrl"].split(f"{CDP_HOST}:{CDP_PORT}", 1)[1]
+    ws = WsClient(CDP_HOST, CDP_PORT, ws_path)
+    ensure_zhipin_page(ws)
+    return ws, new_target["id"]
+
+
+PAGE_STATE_JS = """(function(){
+  return JSON.stringify({
+    href: location.href, host: location.host,
+    ready: document.readyState,
+    hasWt2: document.cookie.indexOf('wt2') !== -1
+  });
+})()"""
+
+
+def page_state(ws: WsClient) -> dict:
+    try:
+        return json.loads(ws.evaluate(PAGE_STATE_JS, timeout=15))
+    except (ValueError, RuntimeError, TimeoutError, ConnectionError, OSError):
+        return {}
+
+
+def ensure_zhipin_page(ws: WsClient, timeout: float = 25.0) -> None:
+    """确保当前标签页在 www.zhipin.com 且加载完成;不在则导航过去并等待。"""
+    ws.evaluate(f"location.href = {json.dumps(HOME_URL)}")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        st = page_state(ws)
+        if st.get("host") == "www.zhipin.com" and st.get("ready") == "complete":
+            return
+        time.sleep(1)
+    raise RuntimeError("zhipin.com 页面 25 秒内未加载完成(网络异常或被拦截)")
+
+
+def login_state(ws: WsClient) -> tuple:
+    """返回 (是否已登录, 说明)。wt2 是 zhipin 登录令牌 cookie。"""
+    st = page_state(ws)
+    if st.get("hasWt2"):
+        return True, "已登录(wt2 令牌存在)"
+    href = st.get("href", "")
+    if "passport" in href or "/login" in href or "/web/user" in href:
+        return False, "当前停在登录页:请在专用浏览器窗口完成扫码/手机号登录"
+    return False, "未检测到登录令牌(wt2):请在专用浏览器窗口登录 zhipin.com"
 
 
 # ---------- 页面内 JS(与需求文档一致:XHR 同步调用,与正常浏览行为同源) ----------
@@ -303,6 +353,9 @@ def save_csv(path: Path, jobs: list) -> None:
 
 # ---------- 命令 ----------
 
+LOGIN_URL = "https://www.zhipin.com/web/user/?ka=header-login"
+
+
 def cmd_setup_chrome(args) -> None:
     chrome = args.chrome or find_chrome()
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
@@ -311,34 +364,46 @@ def cmd_setup_chrome(args) -> None:
         log("CDP 端口已在运行,复用现有 Chrome 实例")
     else:
         import subprocess
+        # 直接打开登录页,减少一步寻找登录入口;窗口若被遮挡请看任务栏
         subprocess.Popen(
             [chrome, f"--remote-debugging-port={CDP_PORT}", f"--user-data-dir={PROFILE_DIR}",
-             "--no-first-run", "--no-default-browser-check", HOME_URL],
+             "--no-first-run", "--no-default-browser-check", LOGIN_URL],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for _ in range(30):
+        for _ in range(60):
             time.sleep(1)
             if cdp_ok():
                 break
         else:
-            sys.exit("! CDP 端口未就绪,请检查浏览器是否启动")
-        log(f"已启动 {chrome}(CDP:{CDP_PORT})")
-    log("请在弹出的浏览器窗口中登录 zhipin.com(登录态会保留在本 profile,重启机器仍在)")
-    log("等待搜索接口返回明文 salaryDesc(登录完成后自动通过,最多等 5 分钟)…")
-    deadline = time.time() + 300
+            sys.exit("! CDP 端口 60 秒未就绪:若浏览器已打开请关闭其全部窗口后重试;或用 --chrome 指定浏览器路径")
+        log(f"已启动 {chrome}(CDP:{CDP_PORT}),已打开 zhipin.com 登录页")
+    log(">>> 请在弹出的专用浏览器窗口里登录 zhipin.com(扫码/手机号)。登录态保留在本 profile,重启机器仍在 <<<")
+    log("轮询登录态(wt2 令牌),最长等 10 分钟;每 30 秒提示一次进度…")
+    deadline = time.time() + 600
+    last_note = -1
     while time.time() < deadline:
         try:
             ws, _ = open_zhipin_tab()
-            raw = ws.evaluate(SEARCH_JS.replace("__KW__", "Python").replace("__CITY__", "").replace("__PAGE__", "1"), timeout=20)
+            logged, why = login_state(ws)
             ws.close()
-            data = json.loads(raw)
-            job_list = (data.get("zpData") or {}).get("jobList") or []
-            if data.get("code") == 0 and any(j.get("salaryDesc") for j in job_list):
-                log("登录态验证通过:salaryDesc 明文可读,可以开始抓取(--smoke-test 复核)")
-                return
+            remaining = int((deadline - time.time()) / 60)
+            if logged:
+                # 登录成功后再验证一次搜索接口返回明文
+                ws, _ = open_zhipin_tab()
+                raw = ws.evaluate(SEARCH_JS.replace("__KW__", "Python").replace("__CITY__", "").replace("__PAGE__", "1"), timeout=20)
+                ws.close()
+                data = json.loads(raw)
+                job_list = (data.get("zpData") or {}).get("jobList") or []
+                if data.get("code") == 0 and any(j.get("salaryDesc") for j in job_list):
+                    log("登录验证通过:salaryDesc 明文可读 —— 回工作台点「连通自检」或直接「开始抓取」")
+                    return
+                log("检测到登录令牌,但搜索接口未返回明文薪资(可能刚登录未生效),继续等待…")
+            elif remaining != last_note:
+                last_note = remaining
+                log(f"等待登录中…(剩约 {remaining} 分钟){(' —— ' + why) if why else ''}")
         except (OSError, ValueError, RuntimeError, TimeoutError) as e:
             warn(f"等待中:{e}")
         time.sleep(5)
-    sys.exit("! 超时:请在 5 分钟内完成登录后重试 --check")
+    sys.exit("! 等待登录超时(10 分钟):请在专用浏览器窗口完成登录后,点「连通自检」确认,无需重跑 setup")
 
 
 def cmd_check() -> None:
@@ -358,14 +423,20 @@ def cmd_check() -> None:
     if cdp_ok():
         try:
             ws, _ = open_zhipin_tab()
-            raw = ws.evaluate(SEARCH_JS.replace("__KW__", "Python").replace("__CITY__", "").replace("__PAGE__", "1"), timeout=20)
-            ws.close()
-            data = json.loads(raw)
-            if data.get("code") == 0:
-                log("BOSS直聘已登录,搜索接口正常")
+            logged, why = login_state(ws)
+            if logged:
+                raw = ws.evaluate(SEARCH_JS.replace("__KW__", "Python").replace("__CITY__", "").replace("__PAGE__", "1"), timeout=20)
+                data = json.loads(raw)
+                if data.get("code") == 0:
+                    log(f"BOSS直聘{why},搜索接口正常 —— 可以开始抓取")
+                else:
+                    ok = False
+                    warn(f"登录态异常(code={data.get('code')}),请在专用 Chrome 重新登录")
             else:
                 ok = False
-                warn(f"登录态异常(code={data.get('code')}),请在专用 Chrome 重新登录")
+                warn(f"未登录:{why}")
+                log("修复步骤:① 点「启动 Chrome」→ ② 在弹出的浏览器窗口登录 zhipin.com → ③ 回本页重新「环境检查」")
+            ws.close()
         except (OSError, ValueError, RuntimeError, TimeoutError) as e:
             ok = False
             warn(f"登录态检查失败:{e}")
@@ -394,16 +465,13 @@ def cmd_scrape(args) -> None:
     ws, _ = open_zhipin_tab()
     all_jobs: dict = {}
     try:
-        # 登录预检:第一页请求失败立即给出行动指引,不产生半截 traceback
-        try:
-            probe = ws.evaluate(
-                SEARCH_JS.replace("__KW__", args.keyword).replace("__CITY__", city_code).replace("__PAGE__", "1"),
-                timeout=30)
-            extract_jobs(probe, args.city)  # 仅校验,不入库
-        except RuntimeError as e:
-            warn(str(e))
-            log("修复步骤:① 点「启动 Chrome」→ ② 在弹出的浏览器窗口登录 zhipin.com → ③ 回本页点「连通自检」→ ④ 重新抓取")
+        # 登录预检:未登录立即给出行动指引,不产生半截 traceback
+        logged, why = login_state(ws)
+        if not logged:
+            warn(f"未登录 —— {why}")
+            log("修复步骤:① 点「启动 Chrome」→ ② 在弹出的专用浏览器窗口登录 zhipin.com(扫码/手机号)→ ③ 回本页点「连通自检」确认 → ④ 重新「开始抓取」")
             sys.exit(2)
+        log(f"登录态 OK({why}),开始抓取…")
         for page in range(1, pages + 1):
             raw = ws.evaluate(
                 SEARCH_JS.replace("__KW__", args.keyword).replace("__CITY__", city_code).replace("__PAGE__", str(page)),
