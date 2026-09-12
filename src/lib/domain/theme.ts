@@ -56,14 +56,14 @@ export const THEMES: Theme[] = [
   },
   {
     id: "anime", label: "二次元动漫风", dark: false,
-    vars: { bg: "#f7f5fd", surface: "#ffffff", "surface-2": "#efecfb", text: "#38304e", muted: "#8d84a8", border: "#e0dbf2", accent: "#8b6ce0", "accent-2": "#e77fb3" },
+    vars: { bg: "#fdf4fa", surface: "#fffdfd", "surface-2": "#fce9f4", text: "#4d3552", muted: "#b394ad", border: "#f7d3e8", accent: "#f06ba8", "accent-2": "#9d7bd8" },
     style: {
-      "radius-card": "16px", "radius-btn": "12px",
-      "font-body": SYS_UI, "font-heading": ROUNDED_CUTE,
-      "card-shadow": "0 8px 24px rgba(139, 108, 224, 0.16)",
+      "radius-card": "20px", "radius-btn": "999px",
+      "font-body": ROUNDED_CUTE, "font-heading": ROUNDED_CUTE,
+      "card-shadow": "0 4px 0 rgba(240, 107, 168, 0.14)",
       "h1-decor": "'✨ '",
       "body-bg":
-        "radial-gradient(ellipse 60% 40% at 85% -5%, rgba(231,127,179,0.14), transparent), radial-gradient(ellipse 50% 35% at 0% 100%, rgba(139,108,224,0.12), transparent), #f7f5fd",
+        "radial-gradient(ellipse 55% 38% at 88% -6%, rgba(157,123,216,0.16), transparent), radial-gradient(ellipse 48% 34% at -4% 102%, rgba(240,107,168,0.14), transparent), radial-gradient(circle at 12px 12px, rgba(240,107,168,0.07) 2px, transparent 2.5px) 0 0 / 26px 26px, #fdf4fa",
     },
   },
   {
@@ -74,7 +74,7 @@ export const THEMES: Theme[] = [
       "font-body": SYS_UI, "font-heading": SYS_UI,
       "card-shadow": "none",
       "h1-decor": "'🌿 '",
-      "body-bg": "#f4faf8",
+      "body-bg": "repeating-linear-gradient(-45deg, transparent 0 22px, rgba(125,150,140,0.04) 22px 24px), #f4faf8",
     },
   },
   {
@@ -96,7 +96,8 @@ export const THEMES: Theme[] = [
       "font-body": SYS_UI, "font-heading": SYS_UI,
       "card-shadow": "none",
       "h1-decor": "'📘 '",
-      "body-bg": "#f5f8fc",
+      "body-bg":
+        "linear-gradient(rgba(74,134,200,0.05) 1px, transparent 1px) 0 0 / 100% 24px, linear-gradient(90deg, rgba(74,134,200,0.05) 1px, transparent 1px) 0 0 / 24px 24px, #f5f8fc",
     },
   },
   {

@@ -58,20 +58,70 @@ html[data-style="neko-cute"] .surface { border-width: 2px; }
 html[data-style="neko-cute"] .accent-btn { font-weight: 700; padding-left: 14px; padding-right: 14px; }
 html[data-style="neko-cute"] .surface:hover { transform: translateY(-1px); }
 html[data-style="neko-cute"] .surface { transition: transform .15s ease; }
+/* 猫爪:卡片右上角一枚肉垫印(hover 时浮现) */
+html[data-style="neko-cute"] .surface::after {
+  content: "🐾"; position: absolute; top: 6px; right: 8px;
+  font-size: 12px; opacity: 0; transform: rotate(20deg) scale(.8); transition: opacity .2s, transform .2s;
+}
+html[data-style="neko-cute"] .surface:hover::after { opacity: .5; transform: rotate(20deg) scale(1); }
+html[data-style="neko-cute"] .surface { position: relative; }
 
-/* 二次元动漫风:渐变标题字、卡片悬停浮起 + 霓虹描边 */
+/* 二次元动漫风:糖果贴纸手绘感——圆耳卡片 + 贴纸描边 + 角落猫吉祥物 + 飘浮星光 */
 html[data-style="anime"] main h1 {
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-html[data-style="anime"] .surface { transition: transform .15s ease, box-shadow .15s ease; }
-html[data-style="anime"] .surface:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(139, 108, 224, 0.24); }
+html[data-style="anime"] .surface {
+  position: relative; border-width: 2px; border-color: #f9c6e0;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+/* 卡片顶部的两只圆耳朵(熊耳,糖果紫) */
+html[data-style="anime"] .surface::before,
+html[data-style="anime"] .surface::after {
+  content: ""; position: absolute; top: -8px; width: 16px; height: 16px;
+  background: var(--accent-2); border: 2px solid var(--border); border-radius: 50%;
+  box-sizing: border-box; pointer-events: none;
+}
+html[data-style="anime"] .surface::before { left: 18px; }
+html[data-style="anime"] .surface::after { right: 18px; background: var(--accent); }
+html[data-style="anime"] .surface:hover { transform: translateY(-2px) rotate(-.3deg); box-shadow: 0 8px 22px rgba(240, 107, 168, 0.22); }
+/* 按钮糖果药丸 + 轻弹跳 */
+html[data-style="anime"] .accent-btn { box-shadow: 0 3px 0 rgba(240, 107, 168, 0.35); font-weight: 700; }
+html[data-style="anime"] .accent-btn:hover { transform: translateY(-1px) rotate(-1deg); }
+/* 角落吉祥物:一只颜文字猫,常驻陪伴 */
+html[data-style="anime"] body::after {
+  content: "ฅ^•ﻌ•^ฅ"; position: fixed; right: 12px; bottom: 60px;
+  font-size: 20px; color: var(--accent); opacity: .75;
+  transform: rotate(-8deg); pointer-events: none; z-index: 30;
+  text-shadow: 0 2px 0 #fff;
+}
+/* 视口里缓浮的星光(transparent 字 + 多组 text-shadow 复制) */
+html[data-style="anime"] body::before {
+  content: "✦ ✦ ✦ ✦ ✦ ✦";
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  color: transparent; font-size: 16px;
+  text-shadow:
+    8vw 16vh 0 #f9bcd8, 86vw 12vh 0 #cbb7f0, 68vw 80vh 0 #f9bcd8,
+    14vw 86vh 0 #cbb7f0, 46vw 6vh 0 #ffd9ea, 93vw 52vh 0 #ffd9ea;
+  animation: anime-float 7s ease-in-out infinite alternate;
+}
+@keyframes anime-float { from { transform: translateY(0); } to { transform: translateY(-14px); } }
+@media (prefers-reduced-motion: reduce) {
+  html[data-style="anime"] body::before { animation: none; }
+}
 
-/* 薄荷清新风:卡片左侧薄荷竖线 */
-html[data-style="mint-fresh"] .surface { border-left: 3px solid var(--accent-2); }
+/* 薄荷清新风:卡片左侧薄荷竖线 + 悬浮淡绿染 */
+html[data-style="mint-fresh"] .surface { border-left: 3px solid var(--accent-2); transition: background .2s; }
+html[data-style="mint-fresh"] .surface:hover { background: color-mix(in srgb, var(--surface) 94%, var(--accent-2)); }
 
-/* 奶油手账风:标题手写感下划线(浅金) */
+/* 奶油手账风:标题手写感下划线 + 卡片顶部一条和纸胶带 */
 html[data-style="cream-journal"] main h1 { text-decoration: underline; text-decoration-color: rgba(201,163,92,.4); text-underline-offset: 6px; }
+html[data-style="cream-journal"] .surface { position: relative; }
+html[data-style="cream-journal"] .surface::before {
+  content: ""; position: absolute; top: -7px; left: 50%; width: 64px; height: 14px;
+  transform: translateX(-50%) rotate(-2deg);
+  background: rgba(201, 163, 92, 0.20); border-radius: 2px; pointer-events: none;
+}
 
 /* 蓝白学习风:卡片顶部蓝条,像笔记本表头 */
 html[data-style="blue-study"] .surface { border-top: 3px solid var(--accent); }
@@ -83,5 +133,7 @@ html[data-style="minimal-pro"] .surface { border-color: color-mix(in srgb, var(-
 /* xfc 风:橙色标题侧标 + 白纸感 */
 html[data-style="xfc"] main h1 { border-left: 5px solid var(--accent); padding-left: 10px; }
 
-/* 深色科技风:标题等宽数字感、霓虹聚焦 */
+/* 深色科技风:标题等宽数字感、霓虹聚焦 + 强调钮辉光 */
 html[data-style="dark-tech"] .input:focus { box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25); }
+html[data-style="dark-tech"] .accent-btn { box-shadow: 0 0 14px rgba(99, 102, 241, 0.35); }
+html[data-style="dark-tech"] main h1 { letter-spacing: .02em; }
