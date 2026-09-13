@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -48,6 +48,14 @@ export function CanvasBoard({
   const [notice, setNotice] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [tplMenu, setTplMenu] = useState(false);
+
+  // 权限管控:把当前工作台 id 广播给侧栏(不同工作台展示不同模块),初始化与切换都会触发
+  useEffect(() => {
+    try {
+      localStorage.setItem("evodesk-active-canvas", canvas.id);
+      window.dispatchEvent(new Event("evodesk-canvas-change"));
+    } catch { /* 无痕模式等 localStorage 不可用时静默 */ }
+  }, [canvas.id]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),

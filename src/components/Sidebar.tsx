@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useModuleVisibility } from "./use-module-visibility";
 import type { ReactNode } from "react";
 
 const I = (d: string) => (
@@ -29,6 +30,7 @@ export const GROUPS: { label: string; items: { href: string; label: string; icon
     { href: "/jobs", label: "求职雷达", icon: I("M12 2a7 7 0 017 7c0 5-7 13-7 13S5 14 5 9a7 7 0 017-7zM12 11.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"), ready: true },
   ]},
   { label: "系统", items: [
+    { href: "/permissions", label: "权限管控", icon: I("M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6zM9 12l2 2 4-4"), ready: true },
     { href: "/links", label: "常用链接", icon: I("M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"), ready: true },
     { href: "/files", label: "本地整理", icon: I("M3 7h6l2 2h10v10H3zM3 7V5h6l2 2"), ready: true },
     { href: "/help", label: "新手帮助", icon: I("M12 22a10 10 0 110-20 10 10 0 010 20zM9.1 9a3 3 0 015.8 1c0 2-3 2.5-3 4M12 17.5h.01"), ready: true },
@@ -36,30 +38,36 @@ export const GROUPS: { label: string; items: { href: string; label: string; icon
   ]},
 ];
 
-/** 桌面侧栏与移动抽屉共用的导航组渲染:同数据、同高亮逻辑(pathname === href)。 */
+/** 桌面侧栏与移动抽屉共用的导航组渲染:同数据、同高亮逻辑(pathname === href)。
+ *  接入权限管控:按 全局隐藏 + 当前工作台白名单 过滤模块展示(useModuleVisibility)。 */
 export function NavLinks({ variant }: { variant: "desktop" | "drawer" }) {
   const pathname = usePathname();
+  const { visible } = useModuleVisibility();
   const pad = variant === "drawer" ? "py-2" : "py-1.5";
   return (
     <>
-      {GROUPS.map((g) => (
-        <div key={g.label}>
-          <div className="text-xs uppercase mb-1" style={{ color: "var(--muted)" }}>{g.label}</div>
-          {g.items.map((it) =>
-            it.ready ? (
-              <Link key={it.href} href={it.href}
-                className={`flex items-center gap-2 px-2 ${pad} rounded-lg text-sm my-0.5`}
-                style={pathname === it.href ? { background: "var(--surface-2)", color: "var(--accent)" } : { color: "var(--text)" }}>
-                {it.icon}{it.label}
-              </Link>
-            ) : (
-              <span key={it.href} className={`flex items-center gap-2 px-2 ${pad} rounded-lg text-sm my-0.5 opacity-40 cursor-not-allowed`} title="后续版本上线">
-                {it.icon}{it.label}
-              </span>
-            ),
-          )}
-        </div>
-      ))}
+      {GROUPS.map((g) => {
+        const items = g.items.filter((it) => visible.has(it.href));
+        if (items.length === 0) return null; // 整组被隐藏则不渲染组头
+        return (
+          <div key={g.label}>
+            <div className="text-xs uppercase mb-1" style={{ color: "var(--muted)" }}>{g.label}</div>
+            {items.map((it) =>
+              it.ready ? (
+                <Link key={it.href} href={it.href}
+                  className={`flex items-center gap-2 px-2 ${pad} rounded-lg text-sm my-0.5`}
+                  style={pathname === it.href ? { background: "var(--surface-2)", color: "var(--accent)" } : { color: "var(--text)" }}>
+                  {it.icon}{it.label}
+                </Link>
+              ) : (
+                <span key={it.href} className={`flex items-center gap-2 px-2 ${pad} rounded-lg text-sm my-0.5 opacity-40 cursor-not-allowed`} title="后续版本上线">
+                  {it.icon}{it.label}
+                </span>
+              ),
+            )}
+          </div>
+        );
+      })}
     </>
   );
 }

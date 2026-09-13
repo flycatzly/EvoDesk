@@ -3,12 +3,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { GROUPS, NavLinks } from "./Sidebar";
+import { useModuleVisibility } from "./use-module-visibility";
 
 const byHref = new Map(GROUPS.flatMap((g) => g.items).map((it) => [it.href, it]));
-const BOTTOM_ITEMS = ["/", "/inbox", "/tasks", "/chat"].flatMap((href) => {
-  const it = byHref.get(href);
-  return it && it.ready ? [it] : [];
-});
+const BOTTOM_HREFS = ["/", "/inbox", "/tasks", "/chat"];
 
 /** 移动端抽屉:汉堡按钮(md 以下显示)+ 左侧滑入面板 + 遮罩;遮罩点击/Esc/路由变化均关闭。 */
 export function MobileDrawer() {
@@ -54,11 +52,22 @@ export function MobileDrawer() {
 /** 移动端底部导航:4 个最高频入口(图标 + 小字),当前页 accent 高亮;桌面端隐藏。 */
 export function MobileNav() {
   const pathname = usePathname();
+  const { visible } = useModuleVisibility();
+  // 底栏随权限管控过滤:优先取默认四项中可见的;不足则用其他可见模块补位
+  const bottomItems = BOTTOM_HREFS
+    .filter((href) => visible.has(href))
+    .map((href) => byHref.get(href))
+    .filter((it): it is NonNullable<typeof it> => !!it && it.ready);
+  if (bottomItems.length === 0) {
+    for (const it of byHref.values()) {
+      if (it.ready && visible.has(it.href) && bottomItems.length < 4) bottomItems.push(it);
+    }
+  }
   return (
     <nav aria-label="快捷导航"
       className="md:hidden fixed bottom-0 inset-x-0 z-30 flex pb-[env(safe-area-inset-bottom)]"
       style={{ background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
-      {BOTTOM_ITEMS.map((it) => (
+      {bottomItems.map((it) => (
         <Link key={it.href} href={it.href}
           className="flex-1 flex flex-col items-center gap-0.5 py-2 text-xs"
           aria-current={pathname === it.href ? "page" : undefined}
