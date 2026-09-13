@@ -31,24 +31,13 @@ export function VaultLibraries() {
   const [summarizing, setSummarizing] = useState<string | null>(null);
 
   const loadRoots = useCallback(async () => {
-    const res = await fetch("/api/settings");
-    const data = (await res.json()) as { settings?: Record<string, unknown> };
-    // 服务端 roots 以 /api/vault/index 的校验为准;这里合并 vault_path + vault_roots 并去重
-    // (同库可能在两处都配置,React key 不允许重复)
-    const norm = (p: string) => p.replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
-    const vp = data.settings?.vault_path;
-    const vr = data.settings?.vault_roots;
-    const seen = new Set<string>();
-    const list: string[] = [];
-    for (const x of [typeof vp === "string" ? vp : "", ...(Array.isArray(vr) ? vr : [])]) {
-      if (typeof x !== "string" || !x.trim()) continue;
-      const k = norm(x);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      list.push(x);
-    }
+    // roots 以服务端 /api/vault/roots 为唯一事实来源(vault_path 主库 + vault_roots,
+    // 服务端按 path.resolve 归一化去重)——客户端不再自行拼装,杜绝 React key 重复
+    const res = await fetch("/api/vault/roots");
+    const data = (await res.json()) as { roots?: string[] };
+    const list = Array.isArray(data.roots) ? data.roots.filter((x) => typeof x === "string" && x.trim()) : [];
     setRoots(list);
-    setRoot((r) => (r && list.some((x) => norm(x) === norm(r)) ? r : list[0] || ""));
+    setRoot((r) => (r && list.includes(r) ? r : list[0] || ""));
   }, []);
 
   const loadIndex = useCallback(async (target: string, category: string) => {
