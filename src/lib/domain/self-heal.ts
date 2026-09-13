@@ -12,12 +12,15 @@ export const MAX_AUTO_FIX_ATTEMPTS = 2;
 /** 扫描三类失败记录(任务步骤/求职雷达/快捷指令),未入账的自动建档。返回新增数。 */
 export function collectIssues(db: Db): number {
   let created = 0;
-  // 1) 任务流程步骤失败(带 run 上下文:任务名 + 模板步骤名)
+  // 1) 任务流程步骤失败(带 run 上下文:任务名 + 模板步骤名)——一次载入建 Map,避免逐行 N+1 查询
   const failedSteps = db.select().from(stepRuns).where(eq(stepRuns.status, "failed")).all() as (typeof stepRuns.$inferSelect)[];
+  const runMap = new Map(db.select().from(flowRuns).all().map((r) => [r.id, r]));
+  const taskMap = new Map(db.select().from(tasks).all().map((t) => [t.id, t]));
+  const tplMap = new Map(db.select().from(flowTemplates).all().map((t) => [t.id, t]));
   for (const s of failedSteps) {
-    const run = db.select().from(flowRuns).all().find((r) => r.id === s.runId);
-    const task = run ? (db.select().from(tasks).all().find((t) => t.id === run.taskId)) : undefined;
-    const tpl = run ? (db.select().from(flowTemplates).all().find((t) => t.id === run.templateId)) : undefined;
+    const run = runMap.get(s.runId);
+    const task = run ? taskMap.get(run.taskId) : undefined;
+    const tpl = run ? tplMap.get(run.templateId) : undefined;
     const label = `${task?.title ?? "任务"} · ${s.stepName}(${tpl?.name ?? "模板"})`;
     const r = recordIssue(db, {
       source: "step",

@@ -57,6 +57,13 @@
       "when": 1789279104668,
       "tag": "0007_special_forgotten_one",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789319275858,
+      "tag": "0008_lovely_glorian",
+      "breakpoints": true
     }
   ]
 }

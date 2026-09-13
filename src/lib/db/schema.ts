@@ -3,7 +3,7 @@
 //    索引也推迟到查询模式(status/project_id/due_date)明确后,随下一次迁移一并添加。
 // 2. 时间戳:所有时间/到期列统一存 UTC ISO 字符串(toISOString(),如 2026-09-07T00:00:00.000Z);
 //    领域代码依赖其字典序比较,禁止写入带时区偏移的混合格式。
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real , index } from "drizzle-orm/sqlite-core";
 
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
@@ -28,7 +28,10 @@ export const tasks = sqliteTable("tasks", {
   outcomeNote: text("outcome_note"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
-});
+}, (t) => [
+  index("idx_tasks_status").on(t.status),
+  index("idx_tasks_due").on(t.dueDate),
+]);
 
 export const flowTemplates = sqliteTable("flow_templates", {
   id: text("id").primaryKey(),
@@ -106,7 +109,12 @@ export const flowRuns = sqliteTable("flow_runs", {
   totalDurationMs: integer("total_duration_ms").notNull().default(0),
   satisfaction: integer("satisfaction"),
   outcomeNote: text("outcome_note"),
-});
+
+}, (t) => [
+  index("idx_flow_runs_task").on(t.taskId),
+  index("idx_flow_runs_template").on(t.templateId),
+  index("idx_flow_runs_status").on(t.status),
+]);
 
 export const stepRuns = sqliteTable("step_runs", {
   id: text("id").primaryKey(),
@@ -129,7 +137,10 @@ export const stepRuns = sqliteTable("step_runs", {
   feedbackNote: text("feedback_note"),
   startedAt: text("started_at"),
   finishedAt: text("finished_at"),
-});
+}, (t) => [
+  index("idx_step_runs_run").on(t.runId),
+  index("idx_step_runs_status").on(t.status),
+]);
 
 export const providerProfiles = sqliteTable("provider_profiles", {
   id: text("id").primaryKey(),
@@ -165,7 +176,7 @@ export const chatMessages = sqliteTable("chat_messages", {
   tokensOut: integer("tokens_out").notNull().default(0),
   costUsd: real("cost_usd").notNull().default(0),
   createdAt: text("created_at").notNull(),
-});
+}, (t) => [index("idx_chat_messages_chat").on(t.chatId)]);
 
 export const quickActions = sqliteTable("quick_actions", {
   id: text("id").primaryKey(),
@@ -188,7 +199,7 @@ export const quickActionRuns = sqliteTable("quick_action_runs", {
   status: text("status").notNull(), // ok|failed|timeout|canceled
   durationMs: integer("duration_ms").notNull().default(0),
   ts: text("ts").notNull(),
-});
+}, (t) => [index("idx_quick_action_runs_status").on(t.status)]);
 
 export const notes = sqliteTable("notes", {
   id: text("id").primaryKey(),
@@ -220,7 +231,7 @@ export const links = sqliteTable("links", {
   category: text("category").notNull().default("常用"),
   sort: integer("sort").notNull().default(0),
   createdAt: text("created_at").notNull(),
-});
+}, (t) => [index("idx_links_category").on(t.category)]);
 
 export const goals = sqliteTable("goals", {
   id: text("id").primaryKey(),
@@ -277,7 +288,7 @@ export const jobsRuns = sqliteTable("jobs_runs", {
   jobCount: integer("job_count").notNull().default(0),
   startedAt: text("started_at").notNull(),
   finishedAt: text("finished_at"),
-});
+}, (t) => [index("idx_jobs_runs_status").on(t.status)]);
 
 export const issues = sqliteTable("issues", {
   id: text("id").primaryKey(),
@@ -294,4 +305,7 @@ export const issues = sqliteTable("issues", {
   aiAnalysis: text("ai_analysis").notNull().default(""), // AI 补充分析(根因/建议)
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
-});
+}, (t) => [
+  index("idx_issues_status").on(t.status),
+  index("idx_issues_source").on(t.source, t.sourceId),
+]);
