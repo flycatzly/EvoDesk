@@ -34,6 +34,8 @@ export function ThemePicker({ compact = false }: { compact?: boolean }) {
     } catch {
       /* 隐私模式等存储不可用:仅本次会话生效 */
     }
+    // 广播主题变化(桌宠等主题联动组件监听)
+    window.dispatchEvent(new Event("evodesk-theme-change"));
     setOpen(false);
   };
 
