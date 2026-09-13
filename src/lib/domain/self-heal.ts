@@ -56,8 +56,12 @@ export function collectIssues(db: Db): number {
 export async function aiAnalyzeIssue(db: Db, issueId: string, executorId?: string): Promise<{ ok: boolean; analysis?: string; error?: string }> {
   const issue = db.select().from(issues).all().find((i) => i.id === issueId);
   if (!issue) return { ok: false, error: "issue 不存在" };
-  const exList = (db.select().from(executors).all() as (typeof executors.$inferSelect)[]).filter((e) => e.enabled && e.type === "llm");
-  const ex = (executorId && exList.find((e) => e.id === executorId)) ?? exList[0];
+  const allLlm = (db.select().from(executors).all() as (typeof executors.$inferSelect)[]) as (typeof executors.$inferSelect)[];
+  const exList = allLlm.filter((e) => e.enabled && e.type === "llm");
+  // 优先真实配置的模型(跳过 YOUR_* 种子占位符),避免选中必然失败的占位执行器
+  const usable = exList.filter((e) => !/^YOUR_/.test(e.model ?? ""));
+  const pool = usable.length > 0 ? usable : exList;
+  const ex = (executorId && pool.find((e) => e.id === executorId)) ?? pool[0];
   if (!ex) return { ok: false, error: "未配置可用 AI 执行器,无法做 AI 分析(启发式诊断仍有效)" };
   const { callLlmWithRetry, executorLlmConfig } = await import("@/lib/llm/client");
   let cfg;

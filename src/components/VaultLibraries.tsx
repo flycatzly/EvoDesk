@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { LibraryAiPanel } from "./LibraryAiPanel";
 
 type LibraryEntry = { relPath: string; name: string; category: string; size: number; mtime: string; isText: boolean };
 type VaultMeta = Record<string, { summary: string; tags: string[]; at: string }>;
@@ -102,6 +103,22 @@ export function VaultLibraries() {
     }
   };
 
+  // 勾选文件(供导入 Obsidian 等)
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSelect = (rel: string) => {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(rel)) next.delete(rel);
+      else next.add(rel);
+      return next;
+    });
+  };
+  // 切换资料库时清空勾选(rAF 包裹避免 effect 内同步 setState)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setSelected(new Set()));
+    return () => cancelAnimationFrame(raf);
+  }, [root]);
+
   const openFile = async (rel: string, isText: boolean) => {
     if (!isText) {
       setNotice("二进制/不可读文件仅展示元数据(如 myBase 的 .nyf 内部格式不解析)。");
@@ -182,6 +199,8 @@ export function VaultLibraries() {
             const m = metaOf(e.relPath);
             return (
               <div key={e.relPath} className="flex flex-wrap items-center gap-2 text-xs px-2 py-1.5" style={{ borderBottom: "1px solid var(--border)" }}>
+                <input type="checkbox" checked={selected.has(e.relPath)} onChange={() => toggleSelect(e.relPath)}
+                  aria-label={`选择 ${e.name}`} title="勾选后可导入 Obsidian" />
                 <span className="px-1.5 rounded" style={{ background: "var(--surface-2)" }}>{e.category}</span>
                 <button className="font-medium hover:opacity-80 truncate max-w-72 text-left" title={e.relPath} onClick={() => void openFile(e.relPath, e.isText)}>
                   {e.name}
@@ -200,6 +219,13 @@ export function VaultLibraries() {
           })}
         </div>
       )}
+
+      <LibraryAiPanel
+        root={root}
+        entries={entries}
+        selected={selected}
+        onReload={() => { void loadIndex(root, cat); setSelected(new Set()); }}
+      />
 
       {viewing && (
         <div className="mt-2 rounded p-2" style={{ border: "1px solid var(--border)" }}>
