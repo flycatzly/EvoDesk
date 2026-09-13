@@ -1,16 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import { getDb } from "@/lib/db/client";
-import { getVaultRoot, resolveVaultPath, readNoteFile, writeNoteFile } from "@/lib/domain/vault";
+import { getVaultRoot, resolveVaultRoot, resolveVaultPath, readNoteFile, writeNoteFile } from "@/lib/domain/vault";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET /api/vault/file?path=:读取 vault 内 md/txt 笔记内容
+// 解析目标库根:?root= 优先(须在资料库白名单内),缺省回退主 vault_path
+function pickRoot(db: ReturnType<typeof getDb>, rootParam: string | null): { root: string | null; error?: string } {
+  if (rootParam) {
+    const root = resolveVaultRoot(db, rootParam);
+    if (!root) return { root: null, error: "root 不在资料库白名单内" };
+    return { root };
+  }
+  return { root: getVaultRoot(db) };
+}
+
+// GET /api/vault/file?path=&root=:读取库内文本文件(md/txt/代码/配置等)
 export async function GET(req: NextRequest) {
   const db = getDb();
-  const vaultRoot = getVaultRoot(db);
-  if (!vaultRoot) return NextResponse.json({ error: "请先在设置页配置 Obsidian vault 路径" }, { status: 400 });
+  const { root: vaultRoot, error: rootErr } = pickRoot(db, req.nextUrl.searchParams.get("root"));
+  if (!vaultRoot) return NextResponse.json({ error: rootErr ?? "请先在设置页配置 Obsidian vault 路径" }, { status: 400 });
   if (!fs.existsSync(vaultRoot)) return NextResponse.json({ error: "vault 目录不存在,请检查设置" }, { status: 400 });
 
   const rel = req.nextUrl.searchParams.get("path") ?? "";

@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/db/client";
 import { getVaultRoot } from "@/lib/domain/vault";
 import { VaultView } from "@/components/VaultView";
+import { VaultLibraries } from "@/components/VaultLibraries";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,7 @@ export default function VaultPage() {
   return (
     <div className="max-w-4xl">
       <h1 className="text-xl font-bold mb-4">知识库</h1>
+      <VaultLibraries />
       <VaultView vaultConfigured={vaultConfigured} />
     </div>
   );

@@ -53,6 +53,12 @@ describe("collectWidgetData", () => {
   it("计数与分组正确:新增任务/笔记/链接后 counters 与 links.groups 反映", () => {
     const db = createTestDb();
     seedIfEmpty(db);
+    // 种子 dueDate 依赖真实时钟,先固定到测试基准日,保证断言确定
+    const seeded = db.select().from(tasks).all() as (typeof tasks.$inferSelect)[];
+    for (const t of seeded) {
+      if (t.title === "整理 Obsidian 笔记目录") db.update(tasks).set({ dueDate: "2026-09-12" }).where(eq(tasks.id, t.id)).run();
+      if (t.title === "体检预约") db.update(tasks).set({ dueDate: "2026-09-11" }).where(eq(tasks.id, t.id)).run();
+    }
     addTask(db, { title: "今日事项", status: "ready", dueDate: "2026-09-12" });
     db.insert(notes).values({ id: crypto.randomUUID(), title: "灵感 A", body: "", tags: "[]", source: "manual", createdAt: now(), updatedAt: now() }).run();
     db.insert(links).values({ id: crypto.randomUUID(), title: "例子", url: "https://example.com", category: "生活", sort: 0, createdAt: now() }).run();

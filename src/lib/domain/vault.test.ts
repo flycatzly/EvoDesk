@@ -58,9 +58,9 @@ describe("readNoteFile", () => {
   it("不存在 → 抛文件不存在", () => {
     expect(() => readNoteFile(vault, "ghost.md")).toThrow(/文件不存在/);
   });
-  it("非 md/txt 扩展 → 抛仅支持 md/txt 文件", () => {
-    fs.writeFileSync(path.join(vault, "data.json"), "{}", "utf8");
-    expect(() => readNoteFile(vault, "data.json")).toThrow(/仅支持 md\/txt/);
+  it("非在线可读扩展(如 myBase 的 nyf)→ 抛仅支持文本类文件", () => {
+    fs.writeFileSync(path.join(vault, "database.nyf"), "binary-ish", "utf8");
+    expect(() => readNoteFile(vault, "database.nyf")).toThrow(/仅支持文本类文件/);
   });
   it("超过 1MB → 抛文件超过 1MB(真实写 1MB 文件,非秒级)", () => {
     fs.writeFileSync(path.join(vault, "big.md"), "a".repeat(1_048_577), "utf8");
@@ -129,5 +129,72 @@ describe("getVaultRoot", () => {
     expect(getVaultRoot(db)).toBeNull();
     db.update(settings).set({ value: "42" }).where(eq(settings.key, "vault_path")).run();
     expect(getVaultRoot(db)).toBeNull();
+  });
+});
+
+// ---------- 资料库(多根):智能分类 / 索引 / 备份清单 ----------
+import { vaultRoots, resolveVaultRoot, categoryForFile, indexLibrary, libraryManifest, VIEWABLE_TEXT_EXTS } from "./vault";
+
+describe("vault 多根与分类", () => {
+  it("vaultRoots = 主 vault_path + vault_roots 数组(去重保序);resolveVaultRoot 白名单校验", () => {
+    const db = createTestDb();
+    seedIfEmpty(db);
+    const upsert = (key: string, value: string) => {
+      const r = db.update(settings).set({ value }).where(eq(settings.key, key)).run();
+      if (r.changes === 0) db.insert(settings).values({ key, value }).run();
+    };
+    upsert("vault_path", JSON.stringify("D:\docs\obsidian"));
+    upsert("vault_roots", JSON.stringify(["E:\apifox-export", "D:\docs\obsidian", "D:\data\myBase"]));
+    expect(vaultRoots(db)).toEqual(["D:\docs\obsidian", "E:\apifox-export", "D:\data\myBase"]);
+    expect(resolveVaultRoot(db, "E:\apifox-export")).toBe("E:\apifox-export");
+    expect(resolveVaultRoot(db, "D:\elsewhere")).toBeNull();
+    expect(resolveVaultRoot(db, null)).toBe("D:\docs\obsidian");
+  });
+  it("categoryForFile 按扩展智能分类", () => {
+    expect(categoryForFile("笔记.md")).toBe("文档");
+    expect(categoryForFile("截图.PNG")).toBe("图片");
+    expect(categoryForFile("数据.csv")).toBe("表格数据");
+    expect(categoryForFile("main.ts")).toBe("代码");
+    expect(categoryForFile("config.yaml")).toBe("数据配置");
+    expect(categoryForFile("归档.zip")).toBe("压缩包");
+    expect(categoryForFile("数据库.nyf")).toBe("其他");
+  });
+});
+
+describe("indexLibrary / libraryManifest", () => {
+  it("递归索引:分类统计正确,跳过隐藏目录,容量截断生效", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "vault-lib-"));
+    tmpDirs.push(root);
+    fs.mkdirSync(path.join(root, "sub"), { recursive: true });
+    fs.mkdirSync(path.join(root, ".hidden"), { recursive: true });
+    fs.writeFileSync(path.join(root, "a.md"), "# hello");
+    fs.writeFileSync(path.join(root, "pic.png"), "x");
+    fs.writeFileSync(path.join(root, "sub", "b.json"), "{}");
+    fs.writeFileSync(path.join(root, ".hidden", "c.md"), "y");
+    const idx = indexLibrary(root);
+    expect(idx.stats["文档"]).toBe(1);
+    expect(idx.stats["图片"]).toBe(1);
+    expect(idx.stats["数据配置"]).toBe(1);
+    expect(idx.entries.every((e) => !e.relPath.includes(".hidden"))).toBe(true);
+    const small = indexLibrary(root, { maxEntries: 2 });
+    expect(small.truncated).toBe(true);
+  });
+  it("备份清单:文本内联、二进制只留元数据", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "vault-manifest-"));
+    tmpDirs.push(root);
+    fs.writeFileSync(path.join(root, "a.md"), "# hello");
+    fs.writeFileSync(path.join(root, "pic.png"), "x");
+    const m = libraryManifest(root);
+    expect(m.total).toBe(2);
+    const md = m.files.find((f) => f.path === "a.md")!;
+    expect(md.content).toBe("# hello");
+    const png = m.files.find((f) => f.path === "pic.png")!;
+    expect(png.content).toBeUndefined();
+    expect(png.category).toBe("图片");
+  });
+  it("在线可读扩展覆盖代码与配置", () => {
+    expect(VIEWABLE_TEXT_EXTS).toContain("json");
+    expect(VIEWABLE_TEXT_EXTS).toContain("md");
+    expect(VIEWABLE_TEXT_EXTS).toContain("csv");
   });
 });

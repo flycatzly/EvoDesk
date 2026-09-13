@@ -4,8 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 type SkillInfo = { path: string; name: string; description: string; category: string; mtime: string };
 type ScanError = { dir: string; message: string };
 type SkillMeta = Record<string, { star?: boolean; note?: string }>;
+type McpServer = { name: string; command: string; args: string[] };
+type McpConfig = { source: string; file: string; servers: McpServer[]; error?: string };
+type Turn = { role: "user" | "assistant"; content: string };
 
-// 技能地图:一键扫描本地 Skill 目录,分类汇总、搜索、星标/备注(备注存 settings.skills_meta)
+// 技能地图:一键扫描本地 Skill 与 MCP 配置,分类汇总、搜索、星标/备注;
+// 支持 AI 辅助创建技能(逐轮追问 → 生成 SKILL.md → 安装/导出)与技能包 zip 导出。
 export function SkillsView() {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [errors, setErrors] = useState<ScanError[]>([]);
@@ -17,6 +21,18 @@ export function SkillsView() {
   const [meta, setMeta] = useState<SkillMeta>({});
   const [noteEditing, setNoteEditing] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
+  // MCP 扫描
+  const [mcpConfigs, setMcpConfigs] = useState<McpConfig[] | null>(null);
+  const [mcpOpen, setMcpOpen] = useState(false);
+  // 创建技能
+  const [createOpen, setCreateOpen] = useState(false);
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [createInput, setCreateInput] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [finalMd, setFinalMd] = useState<string | null>(null);
+  const [installDir, setInstallDir] = useState<string>("");
+  const [installing, setInstalling] = useState(false);
+  const [createMsg, setCreateMsg] = useState<string | null>(null);
 
   const loadMeta = useCallback(async () => {
     try {
@@ -48,6 +64,16 @@ export function SkillsView() {
       setErrors([{ dir: "-", message: "扫描请求失败" }]);
     } finally {
       setScanning(false);
+    }
+  }, []);
+
+  const loadMcp = useCallback(async () => {
+    try {
+      const res = await fetch("/api/skills/mcp");
+      const data = (await res.json()) as { configs?: McpConfig[] };
+      setMcpConfigs(data.configs ?? []);
+    } catch {
+      setMcpConfigs([]);
     }
   }, []);
 
@@ -90,6 +116,68 @@ export function SkillsView() {
     }
   };
 
+  // —— AI 创建技能:逐轮追问 → 最终 SKILL.md → 安装/导出 ——
+  const askCreate = async () => {
+    const content = createInput.trim();
+    if (!content || creating) return;
+    setCreating(true);
+    setCreateMsg(null);
+    const mine: Turn = { role: "user", content };
+    try {
+      const res = await fetch("/api/skills/create", {
+        method: "POST",
+        body: JSON.stringify({ messages: [...turns, mine] }),
+      });
+      const data = (await res.json()) as { reply?: string; final?: string | null; error?: string };
+      if (!res.ok) {
+        setCreateMsg(data.error ?? "AI 调用失败");
+        return;
+      }
+      const reply = data.reply ?? "";
+      setTurns((t) => [...t, mine, { role: "assistant", content: reply }]);
+      setCreateInput("");
+      if (data.final) {
+        setFinalMd(data.final);
+        setInstallDir((d) => d || dirs[0] || "");
+      }
+    } catch {
+      setCreateMsg("请求失败,请重试");
+    } finally {
+      setCreating(false);
+    }
+  };
+  const installSkill = async () => {
+    if (!finalMd || installing) return;
+    setInstalling(true);
+    setCreateMsg(null);
+    try {
+      const res = await fetch("/api/skills/install", {
+        method: "POST",
+        body: JSON.stringify({ content: finalMd, dir: installDir }),
+      });
+      const data = (await res.json()) as { path?: string; error?: string };
+      if (!res.ok) {
+        setCreateMsg(data.error ?? "安装失败");
+        return;
+      }
+      setCreateMsg(`已安装到 ${data.path}`);
+      void scan();
+    } catch {
+      setCreateMsg("安装请求失败");
+    } finally {
+      setInstalling(false);
+    }
+  };
+  const downloadSkillMd = () => {
+    if (!finalMd) return;
+    const blob = new Blob([finalMd], { type: "text/markdown;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "SKILL.md";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   const filtered = q.trim()
     ? skills.filter((s) => `${s.name} ${s.description} ${s.category} ${s.path}`.toLowerCase().includes(q.trim().toLowerCase()))
     : skills;
@@ -103,6 +191,7 @@ export function SkillsView() {
     byCat.set(s.category, list);
   }
   const categories = [...byCat.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const mcpTotal = mcpConfigs?.reduce((n, c) => n + c.servers.length, 0) ?? 0;
 
   const renderSkill = (s: SkillInfo) => {
     const m = meta[s.path] ?? {};
@@ -135,7 +224,7 @@ export function SkillsView() {
     <div className="max-w-4xl">
       <h1 className="text-xl font-bold mb-1">技能地图</h1>
       <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>
-        一键梳理本地 Skill:汇总基础信息、按目录分类;只读扫描,不执行任何 skill 内容。
+        一键梳理本地 Skill 与 MCP:汇总基础信息、按目录分类;只读扫描,不执行任何 skill 内容。
       </p>
 
       <div className="surface p-3 mb-4">
@@ -143,6 +232,11 @@ export function SkillsView() {
           <button className="accent-btn text-xs px-3 py-1.5" onClick={() => void scan()} disabled={scanning}>
             {scanning ? "扫描中…" : scanned ? "重新扫描" : "一键梳理"}
           </button>
+          <button className="ghost-btn text-xs px-2 py-1" onClick={() => setCreateOpen((v) => !v)}>
+            ➕ 创建技能(AI 辅助)
+          </button>
+          {/* API 路由文件下载(attachment),需原生 <a download> */}
+          <a className="ghost-btn text-xs px-2 py-1" href="/api/skills/export" download>导出技能包(zip)</a>
           <input className="input text-sm flex-1 min-w-48" placeholder="搜索名称 / 描述 / 路径…" value={q} onChange={(e) => setQ(e.target.value)} />
           <span className="text-xs" style={{ color: "var(--muted)" }}>{scanned ? `共 ${skills.length} 个` : "尚未扫描"}</span>
         </div>
@@ -155,6 +249,94 @@ export function SkillsView() {
         {errors.length > 0 && (
           <div className="text-xs mt-2" style={{ color: "var(--muted)" }}>
             {errors.map((e) => <div key={e.dir}>⚠ {e.dir}:{e.message}</div>)}
+          </div>
+        )}
+      </div>
+
+      {createOpen && (
+        <div className="surface p-3 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-sm font-medium">➕ 创建技能(AI 辅助)</span>
+            <span className="text-xs" style={{ color: "var(--muted)" }}>描述想做的技能,AI 逐轮追问(最多 5 轮)后生成 SKILL.md</span>
+            <button className="ghost-btn text-xs px-1.5 py-0.5 ml-auto" onClick={() => { setCreateOpen(false); setTurns([]); setFinalMd(null); setCreateMsg(null); }}>收起</button>
+          </div>
+          {turns.length === 0 && !finalMd && (
+            <div className="text-xs mb-2" style={{ color: "var(--muted)" }}>
+              例如:「做一个把当前目录图片按日期归档的技能」
+            </div>
+          )}
+          <div className="space-y-1.5 mb-2 max-h-72 overflow-y-auto">
+            {turns.map((t, i) => (
+              <div key={i} className={`text-sm rounded p-2 ${t.role === "user" ? "ml-8" : "mr-8"}`}
+                style={{ background: "var(--surface-2)" }}>
+                <span className="text-xs mr-1" style={{ color: "var(--muted)" }}>{t.role === "user" ? "我:" : "教练:"}</span>
+                <span className="whitespace-pre-wrap">{t.content}</span>
+              </div>
+            ))}
+          </div>
+          {!finalMd ? (
+            <div className="flex gap-1.5">
+              <input className="input text-sm flex-1" placeholder={turns.length === 0 ? "想做一个什么技能?" : "回答教练的问题…"}
+                value={createInput} autoFocus
+                onChange={(e) => setCreateInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void askCreate(); }}
+                disabled={creating} />
+              <button className="accent-btn text-xs px-3" onClick={() => void askCreate()} disabled={creating || !createInput.trim()}>
+                {creating ? "思考中…" : "发送"}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="text-xs font-medium">✅ 已生成 SKILL.md(可编辑)</div>
+              <textarea className="input text-xs w-full p-2 font-mono" rows={12} value={finalMd}
+                onChange={(e) => setFinalMd(e.target.value)} />
+              <div className="flex flex-wrap gap-2 items-center">
+                <select className="input text-xs" value={installDir} onChange={(e) => setInstallDir(e.target.value)} aria-label="安装目录">
+                  {dirs.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+                <button className="accent-btn text-xs px-3 py-1" onClick={() => void installSkill()} disabled={installing || !installDir}>
+                  {installing ? "安装中…" : "安装到所选目录"}
+                </button>
+                <button className="ghost-btn text-xs px-2 py-1" onClick={downloadSkillMd}>下载 SKILL.md</button>
+                <button className="ghost-btn text-xs px-2 py-1" onClick={() => { void navigator.clipboard.writeText(finalMd); setCreateMsg("已复制到剪贴板"); }}>复制</button>
+                <button className="ghost-btn text-xs px-2 py-1" onClick={() => { setFinalMd(null); setTurns([]); setCreateMsg(null); }}>重新开始</button>
+              </div>
+            </div>
+          )}
+          {createMsg && <div className="text-xs mt-2" style={{ color: "var(--accent)" }}>{createMsg}</div>}
+        </div>
+      )}
+
+      <div className="surface p-3 mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">🔌 本机 MCP</span>
+          <button className="ghost-btn text-xs px-2 py-1" onClick={() => { setMcpOpen((v) => !v); if (mcpConfigs === null) void loadMcp(); }}>
+            {mcpOpen ? "收起" : `查看(${mcpConfigs === null ? "点击扫描" : `${mcpTotal} 台`})`}
+          </button>
+          <span className="text-xs" style={{ color: "var(--muted)" }}>只读解析 Claude Desktop / Claude Code 配置,不连接不执行</span>
+        </div>
+        {mcpOpen && mcpConfigs !== null && (
+          <div className="mt-2 space-y-2">
+            {mcpConfigs.length === 0 && <div className="text-xs" style={{ color: "var(--muted)" }}>未找到 MCP 配置文件(未安装或未配置 MCP 客户端)。</div>}
+            {mcpConfigs.map((c) => (
+              <div key={c.file} className="rounded p-2" style={{ border: "1px solid var(--border)" }}>
+                <div className="text-xs mb-1">
+                  <span className="font-medium">{c.source}</span>
+                  <span className="ml-2" style={{ color: "var(--muted)" }} title={c.file}>{c.servers.length} 台</span>
+                  {c.error && <span className="ml-2" style={{ color: "var(--danger)" }}>⚠ {c.error}</span>}
+                </div>
+                <div className="space-y-1">
+                  {c.servers.map((s) => (
+                    <div key={s.name} className="text-xs flex items-center gap-2">
+                      <span className="px-1.5 rounded" style={{ background: "var(--surface-2)" }}>{s.name}</span>
+                      <span className="truncate flex-1" style={{ color: "var(--muted)" }} title={`${s.command} ${s.args.join(" ")}`}>
+                        {s.command} {s.args.join(" ")}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

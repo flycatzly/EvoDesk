@@ -30,6 +30,7 @@ export const GROUPS: { label: string; items: { href: string; label: string; icon
     { href: "/jobs", label: "求职雷达", icon: I("M12 2a7 7 0 017 7c0 5-7 13-7 13S5 14 5 9a7 7 0 017-7zM12 11.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"), ready: true },
   ]},
   { label: "系统", items: [
+    { href: "/files", label: "本地整理", icon: I("M3 7h6l2 2h10v10H3zM3 7V5h6l2 2"), ready: true },
     { href: "/help", label: "新手帮助", icon: I("M12 22a10 10 0 110-20 10 10 0 010 20zM9.1 9a3 3 0 015.8 1c0 2-3 2.5-3 4M12 17.5h.01"), ready: true },
     { href: "/settings", label: "设置", icon: I("M12 8a4 4 0 100 8 4 4 0 000-8zM19 12a7 7 0 00-.1-1l2-1.5-2-3.5-2.4 1a7 7 0 00-1.7-1L14.5 3h-5l-.3 2.5a7 7 0 00-1.7 1l-2.4-1-2 3.5L5.1 11a7 7 0 000 2l-2 1.5 2 3.5 2.4-1a7 7 0 001.7 1l.3 2.5h5l.3-2.5a7 7 0 001.7-1l2.4 1 2-3.5-2-1.5c.06-.33.1-.66.1-1z"), ready: true },
   ]},

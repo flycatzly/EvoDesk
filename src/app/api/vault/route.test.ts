@@ -100,10 +100,11 @@ describe("GET/PUT /api/vault/file", () => {
     expect(missing.status).toBe(400);
     expect(((await missing.json()) as { error: string }).error).toContain("文件不存在");
 
-    fs.writeFileSync(path.join(vault, "data.json"), "{}", "utf8");
-    const notMd = await GET_FILE(req("/api/vault/file?path=data.json"));
-    expect(notMd.status).toBe(400);
-    expect(((await notMd.json()) as { error: string }).error).toContain("仅支持 md/txt");
+    // data.json 现为在线可读文本(200);真正不可读的扩展(如 myBase 的 nyf)才 400
+    fs.writeFileSync(path.join(vault, "database.nyf"), "binary", "utf8");
+    const notText = await GET_FILE(req("/api/vault/file?path=database.nyf"));
+    expect(notText.status).toBe(400);
+    expect(((await notText.json()) as { error: string }).error).toContain("仅支持文本类文件");
 
     const escape = await GET_FILE(req(`/api/vault/file?path=${encodeURIComponent("../evil.md")}`));
     expect(escape.status).toBe(403);
