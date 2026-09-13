@@ -33,15 +33,22 @@ export function VaultLibraries() {
   const loadRoots = useCallback(async () => {
     const res = await fetch("/api/settings");
     const data = (await res.json()) as { settings?: Record<string, unknown> };
-    // 服务端 roots 以 /api/vault/index 的校验为准;这里仅取 vault_path 显示
+    // 服务端 roots 以 /api/vault/index 的校验为准;这里合并 vault_path + vault_roots 并去重
+    // (同库可能在两处都配置,React key 不允许重复)
+    const norm = (p: string) => p.replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
     const vp = data.settings?.vault_path;
     const vr = data.settings?.vault_roots;
-    const list = [
-      ...(typeof vp === "string" && vp ? [vp] : []),
-      ...(Array.isArray(vr) ? vr.filter((x): x is string => typeof x === "string") : []),
-    ];
+    const seen = new Set<string>();
+    const list: string[] = [];
+    for (const x of [typeof vp === "string" ? vp : "", ...(Array.isArray(vr) ? vr : [])]) {
+      if (typeof x !== "string" || !x.trim()) continue;
+      const k = norm(x);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      list.push(x);
+    }
     setRoots(list);
-    setRoot((r) => r || list[0] || "");
+    setRoot((r) => (r && list.some((x) => norm(x) === norm(r)) ? r : list[0] || ""));
   }, []);
 
   const loadIndex = useCallback(async (target: string, category: string) => {

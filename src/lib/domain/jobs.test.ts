@@ -56,7 +56,7 @@ describe("spawnJobsScript(真实进程集成)", () => {
     const os = await import("node:os");
     const pathMod = await import("node:path");
     const { spawnJobsScript, currentRun } = await import("./jobs");
-    // 用 node 本身当"解释器",脚本回显收到的第一个参数,证明空格参数未被拆分
+    // 用 node 本身当"解释器",脚本回显收到的空格参数,证明其未被拆分
     const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), "jobs-spawn-"));
     const script = pathMod.join(dir, "echo-argv.cjs");
     fs.writeFileSync(script, 'console.log("KW=" + JSON.stringify(process.argv[3]));\n');

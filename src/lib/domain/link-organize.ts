@@ -95,14 +95,41 @@ export function normalizeUrl(url: string): string {
   }
 }
 
-/** 重复链接分组:按归一化 URL 分组,仅返回 >1 条的组(保持库内顺序,首条视为保留对象) */
-export function findDuplicateGroups(rows: Pick<LinkRowLite, "id" | "url">[]): { key: string; ids: string[] }[] {
-  const byKey = new Map<string, string[]>();
+/** 重复链接分组:同 URL(归一化)或 同标题+同站点(近重复,如同一站点收藏进多个目录)。 */
+export function findDuplicateGroups(rows: Pick<LinkRowLite, "id" | "url" | "title">[]): { key: string; kind: "同网址" | "同标题同站"; ids: string[] }[] {
+  const out: { key: string; kind: "同网址" | "同标题同站"; ids: string[] }[] = [];
+  // 1) 归一化 URL 完全一致
+  const byUrl = new Map<string, string[]>();
   for (const r of rows) {
     const key = normalizeUrl(r.url);
-    const list = byKey.get(key) ?? [];
+    const list = byUrl.get(key) ?? [];
     list.push(r.id);
-    byKey.set(key, list);
+    byUrl.set(key, list);
   }
-  return [...byKey.entries()].filter(([, ids]) => ids.length > 1).map(([key, ids]) => ({ key, ids }));
+  for (const [key, ids] of byUrl) {
+    if (ids.length > 1) out.push({ key, kind: "同网址", ids });
+  }
+  // 2) 同标题 + 同站点(标题归一化去空白/标点差异,≥4 字才参与,避免"登录"类泛词误报)
+  const hostOf = (u: string) => {
+    try {
+      return new URL(u).hostname.toLowerCase().replace(/^www\./, "");
+    } catch {
+      return "";
+    }
+  };
+  const normTitle = (t: string) => t.toLowerCase().replace(/\s+/g, "").replace(/[【】\[\]()（）·—–\-_|]/g, "");
+  const byTitleHost = new Map<string, string[]>();
+  const inUrlGroup = new Set(out.flatMap((g) => g.ids));
+  for (const r of rows) {
+    if (inUrlGroup.has(r.id)) continue; // 已按 URL 判重的不再重复入组
+    const key = `${normTitle(r.title)}@${hostOf(r.url)}`;
+    if (normTitle(r.title).length < 4 || !hostOf(r.url)) continue;
+    const list = byTitleHost.get(key) ?? [];
+    list.push(r.id);
+    byTitleHost.set(key, list);
+  }
+  for (const [key, ids] of byTitleHost) {
+    if (ids.length > 1) out.push({ key, kind: "同标题同站", ids });
+  }
+  return out;
 }

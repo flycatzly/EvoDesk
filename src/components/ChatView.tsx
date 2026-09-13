@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 interface Msg { id: string; role: string; content: string; model: string | null; costUsd: number }
 
 export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAnyModel, mode = "chat", basePath = "/chat" }: {
-  chats: { id: string; title: string; workdir: string | null }[];
+  chats: { id: string; title: string; workdir: string | null; mode?: string }[];
   activeId: string | null;
   initialMessages: Msg[];
   modelGroups: { executorId: string; label: string; group: string }[];
@@ -25,6 +25,8 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
   const [dirEditing, setDirEditing] = useState<Record<string, string>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
   const activeChat = chats.find((c) => c.id === activeId) ?? null;
+  // 会话模式以当前会话自身的 mode 为准(教练并入对话台:同一页面承载 chat/coach 两种会话)
+  const effectiveMode: "chat" | "coach" = (activeChat?.mode as "chat" | "coach" | undefined) ?? mode;
 
   const groups = [...new Set(modelGroups.map((g) => g.group))];
   // 自动滚动:新消息加入时贴底(流式 delta 期间由 done 分支兜底滚动)
@@ -82,7 +84,7 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
   // —— 需求教练:轮次提示与最终提示词操作 ——
   const rounds = messages.filter((m) => m.role === "assistant" && !m.id.startsWith("tmp-")).length;
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-  const finalReady = mode === "coach" && !!lastAssistant && lastAssistant.content.includes("最终搭建提示词");
+  const finalReady = effectiveMode === "coach" && !!lastAssistant && lastAssistant.content.includes("最终搭建提示词");
 
   const copyFinal = async () => {
     if (!lastAssistant) return;
@@ -113,9 +115,9 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
   };
 
   // —— 会话管理:新建 / 重命名 / 工作目录 / 删除 ——
-  const createChat = async () => {
+  const createChat = async (chatMode: "chat" | "coach" = effectiveMode) => {
     try {
-      const res = await fetch("/api/chats", { method: "POST", body: JSON.stringify({ title: "新对话", mode }) });
+      const res = await fetch("/api/chats", { method: "POST", body: JSON.stringify({ title: chatMode === "coach" ? "需求教练" : "新对话", mode: chatMode }) });
       const data = (await res.json().catch(() => null)) as { chat?: { id: string } } | null;
       const newId = data?.chat?.id;
       if (res.ok && newId) {
@@ -164,7 +166,8 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
         <select className="input px-2 py-1.5 text-sm max-w-56" value={activeId ?? ""} onChange={(e) => router.push(`${basePath}?c=${e.target.value}`)}>
           {chats.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
         </select>
-        <button onClick={() => void createChat()} className="ghost-btn px-2 py-1.5 text-sm">+ 新对话</button>
+        <button onClick={() => void createChat("chat")} className="ghost-btn px-2 py-1.5 text-sm">+ 新对话</button>
+        <button onClick={() => void createChat("coach")} className="ghost-btn px-2 py-1.5 text-sm" title="教练式逐轮提问,产出可复制的搭建提示词">🏃 教练对话</button>
         <button onClick={() => setMgrOpen((v) => !v)} className="ghost-btn px-2 py-1.5 text-sm" title="重命名 / 工作目录 / 删除">
           会话管理
         </button>
@@ -192,6 +195,7 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
             return (
               <div key={c.id} className="rounded p-2" style={{ background: c.id === activeId ? "var(--surface-2)" : "transparent", border: "1px solid var(--border)" }}>
                 <div className="flex items-center gap-2 flex-wrap text-sm">
+                  {c.mode === "coach" && <span title="教练会话" className="text-xs">🏃</span>}
                   {draft !== undefined ? (
                     <>
                       <input className="input text-sm flex-1 min-w-40" value={draft} autoFocus
@@ -262,7 +266,7 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
           })}
         </div>
       )}
-      {mode === "coach" && (
+      {effectiveMode === "coach" && (
         <div className="surface p-2.5 mb-3 flex items-center gap-2 text-xs flex-wrap">
           <span style={{ color: "var(--accent)" }}>🏃 需求教练</span>
           <span style={{ color: "var(--muted)" }}>教练逐轮提问(最多 6 轮),信息足够后输出「最终搭建提示词」。</span>

@@ -56,15 +56,24 @@ describe("normalizeUrl / findDuplicateGroups", () => {
     expect(normalizeUrl("https://example.com/a")).not.toBe(normalizeUrl("https://example.com/b"));
     expect(normalizeUrl("https://example.com/a?id=1")).not.toBe(normalizeUrl("https://example.com/a?id=2"));
   });
-  it("findDuplicateGroups 只返回重复组,保持出现顺序(首条=保留)", () => {
+  it("findDuplicateGroups:同网址组 + 同标题同站近重复组(已判 URL 的不重复入组)", () => {
     const rows = [
-      { id: "1", url: "https://github.com/x" },
-      { id: "2", url: "https://www.github.com/x/" },
-      { id: "3", url: "https://unique.com" },
-      { id: "4", url: "http://github.com/x" },
+      { id: "1", url: "https://github.com/x", title: "GitHub" },
+      { id: "2", url: "https://www.github.com/x/", title: "GitHub" },
+      { id: "3", url: "https://unique.com", title: "独一无二" },
+      { id: "4", url: "http://github.com/x", title: "GitHub" },
+      // 同标题同站、URL 不同的两条短链(标题+站点判重兜底)
+      { id: "5", url: "https://mp.weixin.qq.com/s/abc123", title: "微信公众平台" },
+      { id: "6", url: "https://mp.weixin.qq.com/s/def456", title: "微信公众平台" },
+      // 同标题但不同站 → 不算重复
+      { id: "7", url: "https://a.com/登录页", title: "统一登录入口" },
+      { id: "8", url: "https://b.com/登录页", title: "统一登录入口" },
     ];
     const groups = findDuplicateGroups(rows);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].ids).toEqual(["1", "2", "4"]);
+    const urlGroup = groups.find((g) => g.kind === "同网址")!;
+    expect(urlGroup.ids).toEqual(["1", "2", "4"]);
+    const titleGroup = groups.find((g) => g.kind === "同标题同站")!;
+    expect(titleGroup.ids).toEqual(["5", "6"]);
+    expect(groups.filter((g) => g.ids.includes("7"))).toHaveLength(0);
   });
 });

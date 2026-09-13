@@ -13,13 +13,11 @@ export const GROUPS: { label: string; items: { href: string; label: string; icon
     { href: "/inbox", label: "收件箱", icon: I("M22 12h-6l-2 3h-4l-2-3H2M5 5h14l3 7v7H2v-7z"), ready: true },
     { href: "/tasks", label: "任务看板", icon: I("M4 4h6v16H4zM14 4h6v10h-6z"), ready: true },
     { href: "/calendar", label: "日历", icon: I("M8 2v4M16 2v4M3 8h18M5 4h14v18H5z"), ready: true },
-    { href: "/links", label: "常用链接", icon: I("M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"), ready: true },
     { href: "/goals", label: "目标进度", icon: I("M12 20V10M18 20V4M6 20v-4"), ready: true },
     { href: "/stats", label: "本周复盘", icon: I("M6 20V10M12 20V4M18 20v-6"), ready: true },
   ]},
   { label: "AI", items: [
     { href: "/chat", label: "对话台", icon: I("M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z"), ready: true },
-    { href: "/coach", label: "需求教练", icon: I("M12 2l2.4 4.9 5.6.8-4 3.9.9 5.4-4.9-2.6-4.9 2.6.9-5.4-4-3.9 5.6-.8z"), ready: true },
     { href: "/skills", label: "技能地图", icon: I("M12 2a4 4 0 014 4c0 1.5-.8 2.8-2 3.5V12h4a2 2 0 012 2v2a4 4 0 01-8 0v-2h-4v2a4 4 0 11-8 0"), ready: true },
   ]},
   { label: "资产", items: [
@@ -30,6 +28,7 @@ export const GROUPS: { label: string; items: { href: string; label: string; icon
     { href: "/jobs", label: "求职雷达", icon: I("M12 2a7 7 0 017 7c0 5-7 13-7 13S5 14 5 9a7 7 0 017-7zM12 11.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"), ready: true },
   ]},
   { label: "系统", items: [
+    { href: "/links", label: "常用链接", icon: I("M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"), ready: true },
     { href: "/files", label: "本地整理", icon: I("M3 7h6l2 2h10v10H3zM3 7V5h6l2 2"), ready: true },
     { href: "/help", label: "新手帮助", icon: I("M12 22a10 10 0 110-20 10 10 0 010 20zM9.1 9a3 3 0 015.8 1c0 2-3 2.5-3 4M12 17.5h.01"), ready: true },
     { href: "/settings", label: "设置", icon: I("M12 8a4 4 0 100 8 4 4 0 000-8zM19 12a7 7 0 00-.1-1l2-1.5-2-3.5-2.4 1a7 7 0 00-1.7-1L14.5 3h-5l-.3 2.5a7 7 0 00-1.7 1l-2.4-1-2 3.5L5.1 11a7 7 0 000 2l-2 1.5 2 3.5 2.4-1a7 7 0 001.7 1l.3 2.5h5l.3-2.5a7 7 0 001.7-1l2.4 1 2-3.5-2-1.5c.06-.33.1-.66.1-1z"), ready: true },

@@ -144,9 +144,11 @@ export function spawnJobsScript({ kind, args, db, params = {}, scriptPath: scrip
 
   // 不经 shell:参数数组原样传递,libuv 负责给含空格的参数(如 --keyword "AI Agent")加引号;
   // shell:true 会把空格参数手动拼接进命令行,导致 "AI Agent" 被拆成两个 argv(回归根因)。
+  // PYTHONUNBUFFERED 关闭 python 输出缓冲:进度实时流式回传(否则管道模式下日志积压到退出才出现,
+  // 页面显示"0 字符");该变量对非 python 解释器无副作用。
   const child = spawn(pythonCmd, [scriptPath, ...args], {
     windowsHide: true,
-    env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+    env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUNBUFFERED: "1" },
   });
   const running: Running = { child, runId, output: "", startedAt: Date.now() };
   global_.__evodeskJobsRun = running;

@@ -7,7 +7,7 @@ type BookmarkProfileMeta = { browser: string; profileName: string; bookmarksPath
 type OrganizePreview = {
   auto: { id: string; title: string; from: string; to: string }[];
   renames: { from: string; to: string; reason: string; count: number }[];
-  duplicateGroups: { key: string; links: { id: string; title: string; category: string }[] }[];
+  duplicateGroups: { key: string; kind: string; links: { id: string; title: string; category: string }[] }[];
 };
 
 const EMPTY_FORM = { title: "", url: "", category: "", sort: 0 };
@@ -36,6 +36,7 @@ export function LinksView() {
   const [orgOpen, setOrgOpen] = useState(false);
   const [orgLoading, setOrgLoading] = useState(false);
   const [org, setOrg] = useState<OrganizePreview | null>(null);
+  const [orgScopeAll, setOrgScopeAll] = useState(false);
   const [orgPick, setOrgPick] = useState({ auto: new Set<string>(), renames: new Set<string>(), dups: new Set<string>() });
   // 浏览器收藏夹导入
   const [bmProfiles, setBmProfiles] = useState<BookmarkProfileMeta[] | null>(null);
@@ -153,11 +154,12 @@ export function LinksView() {
   };
 
   // —— 智能整理:预览(自动分类/归纳合并/去重)→ 勾选应用 ——
-  const runPreview = async () => {
+  // scopeAll=false 仅重排杂物分类;true=全库重新智能分类(规则未命中保持原分类)
+  const runPreview = async (scopeAll: boolean = orgScopeAll) => {
     setOrgLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/links/organize", { method: "POST", body: JSON.stringify({ action: "preview" }) });
+      const res = await fetch("/api/links/organize", { method: "POST", body: JSON.stringify({ action: "preview", scope: scopeAll ? "all" : "junk" }) });
       const data = (await res.json()) as OrganizePreview;
       setOrg(data);
       setOrgPick({
@@ -172,12 +174,17 @@ export function LinksView() {
       setOrgLoading(false);
     }
   };
+  const toggleScope = () => {
+    const next = !orgScopeAll;
+    setOrgScopeAll(next);
+    void runPreview(next);
+  };
   const applyOrganize = async () => {
     if (!org) return;
     setError(null);
     const msgs: string[] = [];
     if (orgPick.auto.size > 0) {
-      // 按勾选项逐条 PATCH(auto 接口是全量应用,不支持子集)
+      // 按勾选项逐条 PATCH(auto 接口支持 scope;逐条可精确对应勾选子集)
       const picks = org.auto.filter((a) => orgPick.auto.has(a.id));
       const results = await Promise.all(picks.map((a) => fetch(`/api/links/${a.id}`, { method: "PATCH", body: JSON.stringify({ category: a.to }) })));
       if (results.every((r) => r.ok)) msgs.push(`自动分类 ${picks.length} 条`);
@@ -261,9 +268,13 @@ export function LinksView() {
       <div className="surface p-3 mb-4">
         <div className="flex flex-wrap gap-2 items-center mb-1">
           <span className="text-sm font-medium">🪄 目录整理</span>
-          <button className="accent-btn text-xs px-2 py-1" onClick={() => void runPreview()} disabled={orgLoading}>
+          <button className="accent-btn text-xs px-2 py-1" onClick={() => void runPreview(orgScopeAll)} disabled={orgLoading}>
             {orgLoading ? "分析中…" : "🪄 智能整理(自动分类 · 归纳 · 去重)"}
           </button>
+          <label className="text-xs flex items-center gap-1 cursor-pointer" style={{ color: "var(--muted)" }} title="全库重新智能分类:所有链接按规则划分到明确类目(开发/AI/工具…),规则未命中保持原分类;关闭则仅重排杂物分类">
+            <input type="checkbox" checked={orgScopeAll} onChange={toggleScope} disabled={orgLoading} />
+            全库重新分类(划分不同类)
+          </label>
           {/* API 路由文件下载(attachment),需原生 <a download>,非页面导航 */}
           <a className="ghost-btn text-xs px-2 py-1" href="/api/links/export-bookmarks" download>导出书签 HTML</a>
           <a className="ghost-btn text-xs px-2 py-1" href="/api/links/export-json" download>导出分组 JSON</a>
@@ -271,7 +282,12 @@ export function LinksView() {
         </div>
         {orgOpen && org && (
           <div className="mt-2 space-y-3 text-sm">
-            <OrgSection title={`自动分类(${org.auto.length} 条)`} hint="仅重排 收藏夹/书签栏/已导入 等杂物分类下的链接,按域名与关键词规则">
+            <OrgSection
+              title={`自动分类(${org.auto.length} 条)`}
+              hint={orgScopeAll
+                ? "全库重新智能分类:按域名与关键词规则划分到不同类目;未命中规则的链接保持原分类"
+                : "仅重排 收藏夹/书签栏/已导入 等杂物分类下的链接;勾选「全库重新分类」可覆盖全部链接"}
+            >
               {org.auto.length === 0 && <div className="text-xs" style={{ color: "var(--muted)" }}>没有可自动分类的链接。</div>}
               {org.auto.map((a) => (
                 <label key={a.id} className="flex items-center gap-2 text-xs">
@@ -305,10 +321,10 @@ export function LinksView() {
                 </label>
               ))}
             </OrgSection>
-            <OrgSection title={`重复链接(${org.duplicateGroups.length} 组)`} hint="同一网址(忽略协议/www/跟踪参数)只保留最早一条">
+            <OrgSection title={`重复链接(${org.duplicateGroups.length} 组)`} hint="同网址(忽略协议/www/跟踪参数)或 同标题+同站点 的重复收藏;每组保留最早一条">
               {org.duplicateGroups.length === 0 && <div className="text-xs" style={{ color: "var(--muted)" }}>没有重复链接。</div>}
               {org.duplicateGroups.map((g) => (
-                <div key={g.key} className="flex items-start gap-2 text-xs">
+                <div key={`${g.kind}:${g.key}`} className="flex items-start gap-2 text-xs">
                   <input type="checkbox" className="mt-0.5" checked={orgPick.dups.has(g.key)}
                     onChange={(e) => setOrgPick((p) => {
                       const next = new Set(p.dups);
@@ -316,8 +332,11 @@ export function LinksView() {
                       return { ...p, dups: next };
                     })} />
                   <div className="min-w-0">
-                    <div className="truncate" style={{ color: "var(--muted)" }}>{g.key}</div>
-                    <div className="truncate">保留「{g.links[0]?.title}」({g.links[0]?.category}),删除其余 {g.links.length - 1} 条</div>
+                    <div className="truncate">
+                      <span className="px-1 rounded mr-1" style={{ background: "var(--surface-2)", color: "var(--muted)" }}>{g.kind}</span>
+                      {g.links[0]?.title}
+                    </div>
+                    <div className="truncate" style={{ color: "var(--muted)" }}>保留「{g.links[0]?.title}」({g.links[0]?.category}),删除其余 {g.links.length - 1} 条:{g.links.slice(1).map((l) => l.category).join("、")}</div>
                   </div>
                 </div>
               ))}

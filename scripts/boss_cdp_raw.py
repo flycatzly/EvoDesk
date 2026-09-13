@@ -361,7 +361,7 @@ def cmd_setup_chrome(args) -> None:
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     log(f"隔离 profile:{PROFILE_DIR}(不软链、不复制主 Chrome)")
     if cdp_ok():
-        log("CDP 端口已在运行,复用现有 Chrome 实例")
+        log("CDP 端口已在运行,复用现有 Chrome 实例(将自动打开并前置 zhipin.com 页签,请在任务栏找专用 Chrome 窗口)")
     else:
         import subprocess
         # 直接打开登录页,减少一步寻找登录入口;窗口若被遮挡请看任务栏
@@ -382,9 +382,14 @@ def cmd_setup_chrome(args) -> None:
     last_note = -1
     while time.time() < deadline:
         try:
-            ws, _ = open_zhipin_tab()
+            ws, target_id = open_zhipin_tab()
             logged, why = login_state(ws)
             ws.close()
+            # 把 zhipin 页签激活到窗口前台(复用旧实例时登录页常被埋在其他标签后面,用户容易看不到)
+            try:
+                cdp_http(f"/json/activate/{target_id}", timeout=2.0)
+            except Exception:
+                pass
             remaining = int((deadline - time.time()) / 60)
             if logged:
                 # 登录成功后再验证一次搜索接口返回明文

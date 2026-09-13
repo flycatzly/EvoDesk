@@ -23,10 +23,11 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
   return (
     <div className="max-w-4xl">
       <h1 className="text-xl font-bold mb-4">AI 对话台</h1>
-      {/* key 绑定会话 id:切换会话时强制重挂载,确保 initialMessages 状态随之刷新 */}
+      {/* key 绑定会话 id:切换会话时强制重挂载,确保 initialMessages 状态随之刷新;
+          会话列表含 chat/coach 两种模式,教练会话由 ChatView 按会话 mode 注入提示词与轮次条 */}
       <ChatView
         key={active?.id ?? "none"}
-        chats={chatRows.map((x) => ({ id: x.id, title: x.title, workdir: x.workdir }))}
+        chats={chatRows.map((x) => ({ id: x.id, title: x.title, workdir: x.workdir, mode: x.mode }))}
         activeId={active?.id ?? null}
         initialMessages={messages.map((m) => ({ id: m.id, role: m.role, content: m.content, model: m.model, costUsd: m.costUsd }))}
         modelGroups={groups}
