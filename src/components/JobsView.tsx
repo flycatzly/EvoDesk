@@ -127,8 +127,15 @@ export function JobsView() {
           </span>
         </div>
         {running && (
-          <div className="text-xs p-2 rounded" style={{ background: "var(--surface-2)", color: "var(--muted)" }}>
-            ⏳ {KIND_LABEL[running.kind] ?? running.kind}运行中(已输出 {running.output.length} 字符)—— 运行结束自动入库。
+          <div className="text-xs p-2 rounded flex items-center gap-2 flex-wrap" style={{ background: "var(--surface-2)", color: "var(--muted)" }}>
+            <span>⏳ {KIND_LABEL[running.kind] ?? running.kind}运行中(已输出 {running.output.length} 字符)—— 运行结束自动入库。</span>
+            <button
+              className="ghost-btn text-xs px-2 py-0.5 ml-auto"
+              onClick={() => void fetch("/api/jobs/cancel", { method: "POST" }).then(() => void load())}
+              title="终止当前进程并解锁(等待登录超时/卡死时使用)"
+            >
+              取消运行
+            </button>
           </div>
         )}
         {runs.filter((r) => r.status !== "running").slice(0, 3).map((r) => (

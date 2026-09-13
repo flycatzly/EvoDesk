@@ -7,6 +7,7 @@ import { quickActions, quickActionRuns, providerProfiles } from "@/lib/db/schema
 import { renderQuickPayload, runCommandAction, resolveWorkingDir } from "@/lib/domain/quick-actions";
 import { spawnClaude, sanitizeModelName, isValidModelName, sweepStaleSettings, parseLaunchPayload } from "@/lib/domain/launch";
 import { resolveApiKey } from "@/lib/llm/client";
+import { recordIssue } from "@/lib/domain/issue-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +19,12 @@ const MAX_OUTPUT_CHARS = 65_536; // quick_action_runs.output 截断上限(64KB)
 function recordRun(db: ReturnType<typeof getDb>, run: Omit<typeof quickActionRuns.$inferInsert, "id" | "ts">) {
   const row = { id: crypto.randomUUID(), ts: new Date().toISOString(), ...run };
   db.insert(quickActionRuns).values(row).run();
+  // 自愈:失败自动入账(启发式诊断)
+  if (row.status === "failed" || row.status === "timeout") {
+    try {
+      recordIssue(db, { source: "quick_action", sourceId: row.id, sourceLabel: "快捷指令运行", errorText: row.output || `退出码 ${row.exitCode ?? "?"}` });
+    } catch { /* 记录失败不掩盖原错误 */ }
+  }
   return row;
 }
 

@@ -278,3 +278,20 @@ export const jobsRuns = sqliteTable("jobs_runs", {
   startedAt: text("started_at").notNull(),
   finishedAt: text("finished_at"),
 });
+
+export const issues = sqliteTable("issues", {
+  id: text("id").primaryKey(),
+  source: text("source").notNull(), // job | step | quick_action
+  sourceId: text("source_id").notNull(), // 失败记录自身的 id(去重键)
+  sourceLabel: text("source_label").notNull().default(""), // 人类可读标识(任务名/命令/关键词)
+  errorText: text("error_text").notNull().default(""),
+  status: text("status").notNull().default("open"), // open | fixed | ignored
+  cause: text("cause").notNull().default(""), // 启发式诊断
+  fixKind: text("fix_kind").notNull().default("none"), // retry_step | rerun_setup | retry_job | needs_human | none
+  fixStatus: text("fix_status").notNull().default("pending"), // pending | applied | failed | needs_human | not_fixable
+  fixAttempts: integer("fix_attempts").notNull().default(0),
+  fixResult: text("fix_result").notNull().default(""),
+  aiAnalysis: text("ai_analysis").notNull().default(""), // AI 补充分析(根因/建议)
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});

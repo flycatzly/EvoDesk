@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import type { Db } from "@/lib/db/test-util";
 import { jobs, jobsRuns } from "@/lib/db/schema";
 import { readSettingsKv } from "@/lib/db/read-settings";
+import { recordIssue } from "@/lib/domain/issue-store";
 
 export const MAX_PAGES = 10;
 export const OUTPUT_LIMIT = 64 * 1024;
@@ -89,7 +90,7 @@ export function upsertJobs(db: Db, inputs: JobInput[], searchMeta: Record<string
 
 // —— 进程托管:同时只允许一个运行中的抓取/环境操作;服务重启后残留 running 标记由 sweepStaleRuns 收敛 ——
 
-type Running = { child: ReturnType<typeof spawn>; runId: string; output: string; startedAt: number };
+type Running = { child: ReturnType<typeof spawn>; runId: string; kind: string; output: string; startedAt: number };
 const global_ = globalThis as { __evodeskJobsRun?: Running | null };
 
 export function currentRun(): Running | null {
@@ -112,12 +113,23 @@ export function sweepStaleRuns(db: Db): void {
 }
 
 function finishRun(db: Db, run: Running, status: string, note: string, jobCount = 0): void {
+  const output = `${run.output.slice(-OUTPUT_LIMIT)}\n${note}`.trim();
   db.update(jobsRuns).set({
     status, jobCount,
-    output: `${run.output.slice(-OUTPUT_LIMIT)}\n${note}`.trim(),
+    output,
     finishedAt: new Date().toISOString(),
   }).where(eq(jobsRuns.id, run.runId)).run();
   global_.__evodeskJobsRun = null;
+  // 自愈:失败自动入账(启发式诊断,见 issue-store);忽略不影响原流程
+  if (status === "failed") {
+    try {
+      recordIssue(db, { source: "job", sourceId: run.runId, sourceLabel: `BOSS ${kindLabel(run.kind)}`, errorText: output });
+    } catch { /* 记录失败不掩盖原错误 */ }
+  }
+}
+
+function kindLabel(kind: string): string {
+  return kind === "setup" ? "启动 Chrome" : kind === "check" ? "环境检查" : kind === "smoke" ? "连通自检" : "抓取";
 }
 
 export type SpawnOptions = {
@@ -150,7 +162,7 @@ export function spawnJobsScript({ kind, args, db, params = {}, scriptPath: scrip
     windowsHide: true,
     env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUNBUFFERED: "1" },
   });
-  const running: Running = { child, runId, output: "", startedAt: Date.now() };
+  const running: Running = { child, runId, kind, output: "", startedAt: Date.now() };
   global_.__evodeskJobsRun = running;
 
   child.stdout?.on("data", (d: Buffer) => { running.output += d.toString("utf-8"); });
@@ -171,6 +183,15 @@ export function spawnJobsScript({ kind, args, db, params = {}, scriptPath: scrip
     finishRun(db, cur, "ok", `新增 ${inserted},更新 ${updated}`, inserted + updated);
   });
   return { runId };
+}
+
+/** 取消当前运行:杀掉子进程并落库(等待登录/卡死时的解锁手段)。无运行中任务返回 false。 */
+export function cancelCurrentRun(db: Db): boolean {
+  const cur = currentRun();
+  if (!cur) return false;
+  cur.child.kill();
+  finishRun(db, cur, "canceled", "已手动取消");
+  return true;
 }
 
 /** CSV 导出(UTF-8 BOM,Excel 直接打开不乱码) */

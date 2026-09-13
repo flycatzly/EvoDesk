@@ -6,6 +6,7 @@ import { getStepDefs, type StepDef } from "@/lib/domain/step-def";
 import { executorLlmConfig, callLlmWithRetry } from "@/lib/llm/client";
 import { resolveStepExecutor, renderPrompt, type ResolvedExecutor } from "@/lib/domain/executor-resolve";
 import { refreshTemplateStats } from "@/lib/domain/template-stats";
+import { recordIssue } from "@/lib/domain/issue-store";
 
 export class RunError extends Error {
   constructor(message: string, public status = 409) { super(message); }
@@ -126,14 +127,18 @@ export async function runLlmStep(db: Db, runId: string, stepIndex: number, fetch
   const ex = resolveStepExecutor(db, def.executorRole ?? "executor");
   const nowIso = new Date().toISOString();
   if (!ex) {
-    const s = setStep(db, cur.id, { status: "failed", error: `无可用的 ${def.executorRole ?? "executor"} 执行器,可在执行器页启用或改用人工填写`, startedAt: nowIso, finishedAt: nowIso });
+    const msg = `无可用的 ${def.executorRole ?? "executor"} 执行器,可在执行器页启用或改用人工填写`;
+    const s = setStep(db, cur.id, { status: "failed", error: msg, startedAt: nowIso, finishedAt: nowIso });
     syncRunStatus(db, runId);
+    try { recordIssue(db, { source: "step", sourceId: cur.id, sourceLabel: stepLabel(db, runId, stepIndex), errorText: msg }); } catch { /* 自愈记录失败不掩盖原错误 */ }
     return s;
   }
   let cfg;
   try { cfg = executorLlmConfig(ex); } catch (e) {
-    const s = setStep(db, cur.id, { status: "failed", error: String(e), startedAt: nowIso, finishedAt: nowIso });
+    const msg = String(e);
+    const s = setStep(db, cur.id, { status: "failed", error: msg, startedAt: nowIso, finishedAt: nowIso });
     syncRunStatus(db, runId);
+    try { recordIssue(db, { source: "step", sourceId: cur.id, sourceLabel: stepLabel(db, runId, stepIndex), errorText: msg }); } catch { /* 自愈记录失败不掩盖原错误 */ }
     return s;
   }
   const prompt = renderPrompt(def.prompt ?? "", { task: { title: task.title, description: task.description }, prevOutput: prevOutput(db, runId, stepIndex) });
@@ -150,8 +155,10 @@ export async function runLlmStep(db: Db, runId: string, stepIndex: number, fetch
     syncRunStatus(db, runId);
     return s;
   } catch (e) {
-    const s = setStep(db, cur.id, { status: "failed", error: String(e).slice(0, 500), finishedAt: new Date().toISOString(), durationMs: Date.now() - started });
+    const msg = String(e).slice(0, 500);
+    const s = setStep(db, cur.id, { status: "failed", error: msg, finishedAt: new Date().toISOString(), durationMs: Date.now() - started });
     syncRunStatus(db, runId);
+    try { recordIssue(db, { source: "step", sourceId: cur.id, sourceLabel: stepLabel(db, runId, stepIndex), errorText: msg }); } catch { /* 自愈记录失败不掩盖原错误 */ }
     return s;
   }
 }
@@ -184,7 +191,19 @@ export function markStepFailed(db: Db, runId: string, stepIndex: number, error: 
   const cur = requireCurrent(db, runId, stepIndex);
   const s = setStep(db, cur.id, { status: "failed", error: error.slice(0, 500), finishedAt: new Date().toISOString() });
   syncRunStatus(db, runId);
+  // 自愈:失败自动入账(启发式诊断,见 issue-store)
+  try {
+    recordIssue(db, { source: "step", sourceId: cur.id, sourceLabel: stepLabel(db, runId, stepIndex), errorText: error });
+  } catch { /* 记录失败不掩盖原错误 */ }
   return s;
+}
+
+function stepLabel(db: Db, runId: string, stepIndex: number): string {
+  const run = getRun(db, runId);
+  const task = run ? (db.select().from(tasks).all().find((t) => t.id === run.taskId)) : undefined;
+  const tpl = run ? (db.select().from(flowTemplates).all().find((t) => t.id === run.templateId)) : undefined;
+  const step = getSteps(db, runId)[stepIndex];
+  return `${task?.title ?? "任务"} · ${step?.stepName ?? stepIndex}(${tpl?.name ?? "模板"})`;
 }
 
 /** 步骤终态统一落库:覆写产出/成本/错误并 syncRunStatus。自守:run 已取消时不落库不 sync,直接返回当前步骤(取消后步骤已被置 skipped,不得覆写)。 */
