@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { GROUPS } from "@/components/Sidebar";
+import { GROUPS } from "@/components/nav-registry";
 import { modulePermsFromKv, type ModulePerms } from "@/lib/domain/module-visibility";
 
 type CanvasMeta = { id: string; name: string; columns: string; locked: boolean };

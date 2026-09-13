@@ -2,7 +2,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { GROUPS, NavLinks } from "./Sidebar";
+import { NavLinks } from "./Sidebar";
+import { GROUPS } from "./nav-registry";
 import { useModuleVisibility } from "./use-module-visibility";
 
 const byHref = new Map(GROUPS.flatMap((g) => g.items).map((it) => [it.href, it]));

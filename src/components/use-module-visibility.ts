@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { modulePermsFromKv, visibleHrefs, type ModulePerms } from "@/lib/domain/module-visibility";
-import { GROUPS } from "./Sidebar";
+import { GROUPS } from "./nav-registry";
 
 const STORAGE_KEY = "evodesk-active-canvas";
 export const CANVAS_CHANGE_EVENT = "evodesk-canvas-change";
