@@ -13,17 +13,27 @@ describe("getStepDefs", () => {
 });
 
 describe("resolveStepExecutor", () => {
-  it("角色精确匹配优先,回退 executor 角色,无则 null", () => {
+  it("角色精确匹配优先;回退 executor → planner → triage → 任意启用 LLM;全禁用 → null", () => {
     const db = createTestDb();
     seedIfEmpty(db);
     // 种子:快速模型 role=triage(disabled)、强模型 role=planner(disabled)——默认全禁用 → null
     expect(resolveStepExecutor(db, "planner")).toBeNull();
     db.update(executors).set({ enabled: true }).where(eq(executors.name, "强模型")).run();
     expect(resolveStepExecutor(db, "planner")?.name).toBe("强模型");
-    // 无 reviewer → 回退 executor 角色
+    // 无 reviewer/executor → 逐级回退 planner
+    expect(resolveStepExecutor(db, "reviewer")?.name).toBe("强模型");
+    // 有 executor 角色则优先于 planner
     db.update(executors).set({ enabled: true }).where(eq(executors.name, "快速模型")).run();
     db.update(executors).set({ role: "executor" }).where(eq(executors.name, "快速模型")).run();
     expect(resolveStepExecutor(db, "reviewer")?.name).toBe("快速模型");
+  });
+  it("只有 triage 角色启用时,reviewer 也能回退到它(不再整步失败)", () => {
+    const db = createTestDb();
+    seedIfEmpty(db);
+    db.update(executors).set({ enabled: true }).where(eq(executors.name, "快速模型")).run();
+    const ex = resolveStepExecutor(db, "reviewer");
+    expect(ex?.name).toBe("快速模型");
+    expect(ex?.role).toBe("triage");
   });
 });
 

@@ -16,7 +16,16 @@ export interface ResolvedExecutor {
 export function resolveStepExecutor(db: Db, role: string): ResolvedExecutor | null {
   const all = db.select().from(executors).all() as unknown as ResolvedExecutor[];
   const enabled = all.filter((e) => e.type === "llm" && e.enabled);
-  return enabled.find((e) => e.role === role) ?? enabled.find((e) => e.role === "executor") ?? null;
+  // 回退链保证"自检/审查"这类角色绑定的步骤在缺少专属角色执行器时仍能运行
+  // (实际使用的模型记录在 step_runs.model);全部 LLM 禁用才返回 null。
+  return (
+    enabled.find((e) => e.role === role) ??
+    enabled.find((e) => e.role === "executor") ??
+    enabled.find((e) => e.role === "planner") ??
+    enabled.find((e) => e.role === "triage") ??
+    enabled[0] ??
+    null
+  );
 }
 
 export function renderPrompt(
