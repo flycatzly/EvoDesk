@@ -5,6 +5,7 @@ import path from "node:path";
 import { readSettingsKv } from "@/lib/db/read-settings";
 import { expandHome } from "@/lib/domain/skills";
 import { scanGuide, readGuideDoc } from "@/lib/domain/guide";
+import { isPathWithin } from "@/lib/domain/script-security";
 
 
 export const runtime = "nodejs";
@@ -68,4 +69,30 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "读取失败" }, { status: 400 });
   }
+}
+
+// 保存编辑(PUT {dir, path, content}):写回源目录原文件(白名单 + 原子写,覆盖前备份 .bak)
+export async function PUT(req: NextRequest) {
+  const raw = await req.json().catch(() => null);
+  const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
+  const root = resolveGuideDir(body && typeof body.dir === "string" ? body.dir : null);
+  if (!root) return NextResponse.json({ error: "目录不在宝典白名单内" }, { status: 400 });
+  const relPath = body && typeof body.path === "string" ? body.path : "";
+  const content = body && typeof body.content === "string" ? body.content : null;
+  if (content === null) return NextResponse.json({ error: "content 必填" }, { status: 400 });
+  if (content.length > 1_048_576) return NextResponse.json({ error: "内容超过 1MB 上限" }, { status: 400 });
+  const abs = path.resolve(root, relPath);
+  if (!isPathWithin(abs, root)) return NextResponse.json({ error: `路径越界:${relPath}` }, { status: 403 });
+  if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return NextResponse.json({ error: `文件不存在:${relPath}` }, { status: 404 });
+  // 备份原文件为 .bak(同目录,便于找回)
+  fs.copyFileSync(abs, `${abs}.bak`);
+  const tmp = `${abs}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, content, "utf8");
+  try {
+    fs.renameSync(tmp, abs);
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch { /* 清理失败忽略 */ }
+    return NextResponse.json({ error: e instanceof Error ? e.message : "写入失败" }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true, backup: `${relPath}.bak` });
 }

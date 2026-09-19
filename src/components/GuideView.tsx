@@ -71,6 +71,9 @@ export function GuideView() {
   const [notice, setNotice] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [reading, setReading] = useState<{ path: string; content: string } | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editDraft, setEditDraft] = useState("");
+  const [savingDoc, setSavingDoc] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
   // AI 问答
   const [qaQ, setQaQ] = useState("");
@@ -188,8 +191,29 @@ export function GuideView() {
       const data = await res.json();
       if (!res.ok) { setError(errorOf(data, "读取失败")); return; }
       setReading({ path: rel, content: (data as { content: string }).content });
+      setEditMode(false);
     } catch {
       setError("读取请求失败");
+    }
+  };
+
+  // 保存编辑(PUT 写回源文件,服务端自动备份 .bak)
+  const saveDoc = async () => {
+    if (!reading || !editMode || savingDoc) return;
+    setSavingDoc(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/guide", { method: "PUT", body: JSON.stringify({ dir, path: reading.path, content: editDraft }) });
+      const data = await res.json();
+      if (!res.ok) { setError(errorOf(data, "保存失败")); return; }
+      setReading({ ...reading, content: editDraft });
+      setEditMode(false);
+      setNotice(`已保存:${reading.path}(原文件备份为 .bak)`);
+      void load();
+    } catch {
+      setError("保存请求失败");
+    } finally {
+      setSavingDoc(false);
     }
   };
 
@@ -343,9 +367,24 @@ export function GuideView() {
             <>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs truncate" style={{ color: "var(--muted)" }}>{reading.path}</span>
-                <button className="ghost-btn text-xs px-1.5 py-0.5 ml-auto" onClick={() => setReading(null)}>✕</button>
+                {editMode ? (
+                  <>
+                    <button className="accent-btn text-xs px-2 py-1 ml-auto" onClick={() => void saveDoc()} disabled={savingDoc}>{savingDoc ? "保存中…" : "保存"}</button>
+                    <button className="ghost-btn text-xs px-1.5 py-1" onClick={() => { setEditMode(false); setEditDraft(""); }}>取消</button>
+                  </>
+                ) : (
+                  <>
+                    <button className="accent-btn text-xs px-2 py-1 ml-auto" onClick={() => { setEditDraft(reading.content); setEditMode(true); }}>✎ 编辑</button>
+                    <button className="ghost-btn text-xs px-1.5 py-1" onClick={() => setReading(null)}>✕</button>
+                  </>
+                )}
               </div>
-              <div className="text-sm guide-md" dangerouslySetInnerHTML={{ __html: renderMd(reading.content) }} />
+              {editMode ? (
+                <textarea className="w-full text-xs font-mono p-2 rounded" style={{ background: "var(--surface-2)", minHeight: "60vh", outline: "none", border: "1px solid var(--border)", color: "var(--text)" }}
+                  value={editDraft} onChange={(e) => setEditDraft(e.target.value)} />
+              ) : (
+                <div className="text-sm guide-md" dangerouslySetInnerHTML={{ __html: renderMd(reading.content) }} />
+              )}
             </>
           ) : (
             <div className="text-sm text-center py-16" style={{ color: "var(--muted)" }}>
@@ -362,9 +401,18 @@ export function GuideView() {
           <div className="surface p-4 max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-sm font-medium truncate">{reading.path}</span>
-              <button className="ghost-btn text-xs px-1.5 py-0.5 ml-auto" onClick={() => setReading(null)}>✕</button>
+              {!editMode && <button className="accent-btn text-xs px-2 py-0.5 ml-auto" onClick={() => { setEditDraft(reading.content); setEditMode(true); }}>✎ 编辑</button>}
+              <button className="ghost-btn text-xs px-1.5 py-0.5" onClick={() => { setReading(null); setEditMode(false); }}>✕</button>
             </div>
-            <div className="overflow-auto text-sm guide-md" dangerouslySetInnerHTML={{ __html: renderMd(reading.content) }} />
+            {editMode ? (
+              <>
+                <textarea className="w-full text-xs font-mono p-2 rounded" style={{ background: "var(--surface-2)", minHeight: "55vh", outline: "none", border: "1px solid var(--border)", color: "var(--text)" }}
+                  value={editDraft} onChange={(e) => setEditDraft(e.target.value)} />
+                <button className="accent-btn text-xs px-3 py-1 mt-1.5" onClick={() => void saveDoc()} disabled={savingDoc}>{savingDoc ? "保存中…" : "保存"}</button>
+              </>
+            ) : (
+              <div className="overflow-auto text-sm guide-md" dangerouslySetInnerHTML={{ __html: renderMd(reading.content) }} />
+            )}
           </div>
         </div>
       )}
