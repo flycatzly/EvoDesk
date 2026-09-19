@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { LibraryAiPanel } from "./LibraryAiPanel";
+import { KnowledgeGraph } from "./KnowledgeGraph";
+import { VaultQa } from "./VaultQa";
 
 type LibraryEntry = { relPath: string; name: string; category: string; size: number; mtime: string; isText: boolean };
 type VaultMeta = Record<string, { summary: string; tags: string[]; at: string }>;
@@ -220,6 +222,11 @@ export function VaultLibraries() {
         </div>
       )}
 
+      <KnowledgeGraph root={root} />
+      <VaultQa root={root} onOpenFile={(rel) => {
+        const e = entries.find((x) => x.relPath === rel);
+        if (e) void openFile(rel, e.isText);
+      }} />
       <LibraryAiPanel
         root={root}
         entries={entries}
