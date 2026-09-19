@@ -13,5 +13,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     .where(and(eq(canvases.shareToken, token), eq(canvases.isTemplate, false)))
     .all()[0];
   if (!row) return NextResponse.json({ error: "分享链接无效或已吊销" }, { status: 404 });
-  return NextResponse.json({ canvas: { id: row.id, name: row.name, columns: row.columns, layout: row.layout } });
+  // 分享内容随时可被吊销/修改:no-store 防中间层与浏览器缓存旧布局
+  return NextResponse.json(
+    { canvas: { id: row.id, name: row.name, columns: row.columns, layout: row.layout } },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }

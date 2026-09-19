@@ -86,13 +86,21 @@ export function readNoteFile(vaultRoot: string, rel: string): string {
   return fs.readFileSync(p, "utf8");
 }
 
-/** 写入 md/txt 笔记:扩展白名单 → 1MB 上限 → 白名单,父目录不存在则递归创建(仅限 vault 内)。 */
+/** 写入 md/txt 笔记:扩展白名单 → 1MB 上限 → 白名单,父目录不存在则递归创建(仅限 vault 内)。
+ *  原子写:先写临时文件再 rename,进程崩溃/断电不会留下半截内容损坏原文件。 */
 export function writeNoteFile(vaultRoot: string, rel: string, content: string): void {
   if (!/\.(md|txt)$/i.test(rel)) throw new Error("仅支持写入 md/txt 文件");
   if (content.length > MAX_FILE_BYTES) throw new Error("内容超过 1MB 上限");
   const p = resolveVaultPath(vaultRoot, rel);
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, content, "utf8");
+  const tmp = `${p}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, content, "utf8");
+  try {
+    fs.renameSync(tmp, p);
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch { /* 清理失败忽略 */ }
+    throw e;
+  }
 }
 
 export interface SearchHit { path: string; snippet: string }

@@ -16,7 +16,6 @@ export function DesktopPet() {
   const [hearts, setHearts] = useState<Heart[]>([]);
   const [speech, setSpeech] = useState<string | null>(null);
   const heartSeq = useRef(0);
-  const moodTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const happyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const randomize = useCallback(() => {
@@ -35,21 +34,16 @@ export function DesktopPet() {
     return () => window.removeEventListener("evodesk-theme-change", sync);
   }, []);
 
-  // 随机心情(每 9~16 秒换一次)
+  // 随机心情:单 interval + 轮询下次换 mood 的 deadline(避免递归嵌套 interval 的清理竞态)
   useEffect(() => {
     if (!enabled) return;
-    const tick = () => {
+    let deadline = Date.now() + 3000;
+    const timer = setInterval(() => {
+      if (Date.now() < deadline) return;
       randomize();
-      moodTimer.current = setInterval(() => {
-        clearInterval(moodTimer.current!);
-        tick();
-      }, 9000 + Math.floor(Math.random() * 7000));
-    };
-    const delay = setTimeout(tick, 3000);
-    return () => {
-      clearTimeout(delay);
-      if (moodTimer.current) clearInterval(moodTimer.current);
-    };
+      deadline = Date.now() + 9000 + Math.floor(Math.random() * 7000);
+    }, 1000);
+    return () => clearInterval(timer);
   }, [enabled, randomize]);
 
   const pet = () => {
