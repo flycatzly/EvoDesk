@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/db/client";
 import { buildStats } from "@/lib/domain/stats";
 import { StatsView } from "@/components/StatsView";
+import { WeeklyReportButton } from "@/components/WeeklyReportButton";
 import { readSettingsKv } from "@/lib/db/read-settings";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,7 @@ export default async function StatsPage() {
   return (
     <div className="max-w-5xl">
       <h1 className="text-xl font-bold mb-4">统计</h1>
+      <WeeklyReportButton />
       <StatsView data={stats} />
     </div>
   );

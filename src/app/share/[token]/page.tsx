@@ -14,6 +14,7 @@ import { GoalsWidget } from "@/components/canvas/widgets/GoalsWidget";
 import { VaultWidget } from "@/components/canvas/widgets/VaultWidget";
 import { RadarWidget } from "@/components/canvas/widgets/RadarWidget";
 import { QuickActionsWidget } from "@/components/canvas/widgets/QuickActionsWidget";
+import { FocusWidget } from "@/components/canvas/widgets/FocusWidget";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +47,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
         case "vault": if (data.vault) widgetNodes[w.id] = <VaultWidget data={data.vault} />; break;
         case "radar": if (data.radar) widgetNodes[w.id] = <RadarWidget items={data.radar.items} />; break;
         case "quickactions": if (data.quickactions) widgetNodes[w.id] = <QuickActionsWidget actions={data.quickactions.actions} />; break;
+        case "focus": widgetNodes[w.id] = <FocusWidget />; break;
       }
     }
   }

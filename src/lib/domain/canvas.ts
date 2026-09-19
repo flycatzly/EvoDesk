@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 
-export const WIDGET_TYPES = ["counters", "todo", "calendar", "notes", "links", "goals", "vault", "radar", "quickactions"] as const;
+export const WIDGET_TYPES = ["counters", "todo", "calendar", "notes", "links", "goals", "vault", "radar", "quickactions", "focus"] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 
 export const widgetSchema = z.object({

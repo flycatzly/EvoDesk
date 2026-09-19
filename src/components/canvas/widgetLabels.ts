@@ -11,4 +11,5 @@ export const WIDGET_TYPE_LABELS: Record<WidgetType, string> = {
   vault: "知识库",
   radar: "风险雷达",
   quickactions: "快捷指令",
+  focus: "番茄钟专注",
 };

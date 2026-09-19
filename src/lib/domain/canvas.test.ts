@@ -27,7 +27,7 @@ describe("parseLayout", () => {
 });
 
 it("WIDGET_TYPES 含 9 类;newWidgetId 唯一;deepCopyLayout 重写 id", () => {
-  expect(WIDGET_TYPES).toHaveLength(9);
+  expect(WIDGET_TYPES).toHaveLength(10);
   expect(newWidgetId()).not.toBe(newWidgetId());
   const copy = deepCopyLayout([{ groupTitle: "g", widgets: [{ id: "w1", type: "todo", config: {} }] }]);
   expect(copy[0].widgets[0].id).not.toBe("w1");

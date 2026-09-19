@@ -1,4 +1,5 @@
 "use client";
+import { CommandPalette } from "./CommandPalette";
 import { Clock } from "./Clock";
 import { MobileDrawer } from "./MobileNav";
 import { QuoteOfDay } from "./QuoteOfDay";
@@ -13,6 +14,7 @@ export function TopBar() {
       <QuoteOfDay />
       <div className="ml-auto flex items-center gap-3">
         <QuickAdd />
+        <CommandPalette />
         <ThemePicker compact />
       </div>
     </header>

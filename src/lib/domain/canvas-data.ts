@@ -28,6 +28,7 @@ export type WidgetData = {
   vault: { configured: boolean; rootName: string; noteCount: number; dirCount: number };
   radar: { items: RadarItem[] };
   quickactions: { actions: (typeof quickActions.$inferSelect)[] };
+  focus: Record<string, never>; // 番茄钟为纯客户端组件,无需服务端数据
 };
 export type WidgetDataBundle = { [K in WidgetType]?: WidgetData[K] };
 

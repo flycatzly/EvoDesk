@@ -6,6 +6,7 @@ import { issues, jobsRuns, quickActionRuns, stepRuns, flowRuns, executors, flowT
 import { recordIssue, type FixKind } from "./issue-store";
 import { retryStep, runLlmStep } from "./runner";
 import { spawnJobsScript } from "./jobs";
+import { sendNotify } from "./notify";
 
 export const MAX_AUTO_FIX_ATTEMPTS = 2;
 
@@ -100,6 +101,16 @@ export async function applyFix(db: Db, issueId: string): Promise<FixOutcome> {
   const fixKind: FixKind = issue.fixKind as FixKind;
   const bump = (fixStatus: string, result: string) =>
     db.update(issues).set({ fixAttempts: issue.fixAttempts + 1, fixStatus, fixResult: result.slice(0, 500), updatedAt: new Date().toISOString() }).where(eq(issues.id, issueId)).run();
+  // 修复失败转人工 → IM 通知(尽力而为,失败静默)
+  const notifyFail = (result: string) => {
+    void sendNotify(db, {
+      dedupeKey: `healfail-${issueId}-${issue.fixAttempts}`,
+      title: "⚠️ 自愈修复失败,需人工处理",
+      body: `${issue.sourceLabel}
+${result}
+打开 /self-heal 查看详情`,
+    });
+  };
 
   if (fixKind === "needs_human" || fixKind === "none") {
     bump("needs_human", "该问题需要人工处理,系统不做自动动作");
@@ -107,6 +118,7 @@ export async function applyFix(db: Db, issueId: string): Promise<FixOutcome> {
   }
   if (issue.fixAttempts >= MAX_AUTO_FIX_ATTEMPTS) {
     bump("failed", `已达自动修复上限(${MAX_AUTO_FIX_ATTEMPTS} 次),转人工`);
+    notifyFail("已达自动修复上限");
     return { ok: false, result: "已达自动修复上限" };
   }
 
