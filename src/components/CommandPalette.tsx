@@ -39,15 +39,11 @@ export function CommandPalette() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // 打开时聚焦并重置
+  // 打开时聚焦(open 短暂延迟后 focus,避免 effect 同步 setState)
   useEffect(() => {
-    if (open) {
-      setQ("");
-      setHits([]);
-      setActive(0);
-      const raf = requestAnimationFrame(() => inputRef.current?.focus());
-      return () => cancelAnimationFrame(raf);
-    }
+    if (!open) return;
+    const raf = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(raf);
   }, [open]);
 
   // 点击外部关闭
@@ -60,11 +56,11 @@ export function CommandPalette() {
     return () => window.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  // 防抖搜索
+  // 防抖搜索(setLoading 移入定时器回调,避免 effect 内同步 setState)
   useEffect(() => {
     const mySeq = ++seq.current;
-    setLoading(true);
     const t = setTimeout(async () => {
+      setLoading(true);
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
         const data = (await res.json()) as { hits?: Hit[] };

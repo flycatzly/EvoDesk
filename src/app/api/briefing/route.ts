@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 // AI 日报:汇总任务/笔记/自愈数据 → LLM 生成今日简报(纯只读,不写库)。
 // GET 返回汇总原料(前端可显示生成时间);POST 返回 AI 文本。
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const db = getDb();
   const kv = (await import("@/lib/db/read-settings")).readSettingsKv(db);
   const tz = typeof kv.timezone === "string" ? kv.timezone : "";

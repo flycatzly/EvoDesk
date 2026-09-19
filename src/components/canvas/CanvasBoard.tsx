@@ -229,6 +229,27 @@ export function CanvasBoard({
 
   const gridClass = useMemo(() => (columns === "3" ? "md:grid-cols-3" : "md:grid-cols-2"), [columns]);
   const canEdit = !locked && !readOnly;
+  // 数据大屏模式:隐藏全部控件,大字号渲染,多画布时自动轮播(15s/屏);Esc 或点按钮退出
+  const [tvMode, setTvMode] = useState(false);
+  useEffect(() => {
+    if (!tvMode) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setTvMode(false); };
+    window.addEventListener("keydown", onKey);
+    document.documentElement.dataset.tv = "1";
+    let rotate: ReturnType<typeof setInterval> | null = null;
+    if (canvases.length > 1) {
+      rotate = setInterval(() => {
+        const i = canvases.findIndex((c) => c.id === canvas.id);
+        const next = canvases[(i + 1) % canvases.length];
+        router.push(`/?c=${next.id}`);
+      }, 15_000);
+    }
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      delete document.documentElement.dataset.tv;
+      if (rotate) clearInterval(rotate);
+    };
+  }, [tvMode, canvases, canvas.id, router]);
 
   const toolbar = (
     <div className="flex flex-wrap items-center gap-2 mb-4 text-sm">
@@ -289,6 +310,9 @@ export function CanvasBoard({
             </button>
             <button className="ghost-btn text-xs" onClick={() => { setShareUrl(null); void genShare(); }} title="生成只读分享链接">
               分享
+            </button>
+            <button className="ghost-btn text-xs" onClick={() => setTvMode(true)} title="数据大屏:隐藏控件大字号展示,多画布自动轮播,Esc 退出">
+              📺 大屏
             </button>
           </>
         )}

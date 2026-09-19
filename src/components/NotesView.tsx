@@ -1,5 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { ClipBar } from "./ClipBar";
 import { useState } from "react";
 import type { notes } from "@/lib/db/schema";
 
@@ -126,6 +127,8 @@ export function NotesView({ notes: rows }: { notes: NoteRow[] }) {
     <div>
       {/* 一致性栏:成功/失败提示全程在此呈现 */}
       {note && <div className="surface p-2 mb-3 text-sm">{note}</div>}
+
+      <ClipBar />
 
       {/* 新建:顶部 surface 卡 */}
       <div className="surface p-3 mb-4">

@@ -18,6 +18,7 @@ export const GROUPS: { label: string; items: { href: string; label: string; icon
   ]},
   { label: "AI", items: [
     { href: "/chat", label: "对话台", icon: I("M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z"), ready: true },
+    { href: "/memories", label: "记忆库", icon: I("M12 3a4 4 0 014 4c0 1.5-.8 2.8-2 3.5V12h4a2 2 0 012 2v2a4 4 0 01-8 0v-2h-4v2a4 4 0 11-8 0"), ready: true },
     { href: "/skills", label: "技能地图", icon: I("M12 2a4 4 0 014 4c0 1.5-.8 2.8-2 3.5V12h4a2 2 0 012 2v2a4 4 0 01-8 0v-2h-4v2a4 4 0 11-8 0"), ready: true },
     { href: "/self-heal", label: "自我进化", icon: I("M12 3v3M12 18v3M3 12h3M18 12h3M12 8a4 4 0 100 8 4 4 0 000-8zM4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M4.9 19.1l2.2-2.2M16.9 7.1l2.2-2.2"), ready: true },
   ]},

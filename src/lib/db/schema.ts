@@ -309,3 +309,12 @@ export const issues = sqliteTable("issues", {
   index("idx_issues_status").on(t.status),
   index("idx_issues_source").on(t.source, t.sourceId),
 ]);
+
+export const memories = sqliteTable("memories", {
+  id: text("id").primaryKey(),
+  content: text("content").notNull(), // 一条关于用户的长期事实(中文短句)
+  sourceChatId: text("source_chat_id"),
+  pinned: integer("pinned", { mode: "boolean" }).notNull().default(false), // 置顶 = 永不淘汰
+  hits: integer("hits").notNull().default(0), // 被注入次数(观察用途)
+  createdAt: text("created_at").notNull(),
+});

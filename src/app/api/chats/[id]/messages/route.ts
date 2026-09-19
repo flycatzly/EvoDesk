@@ -5,6 +5,7 @@ import { chats, chatMessages, executors } from "@/lib/db/schema";
 import { executorLlmConfig } from "@/lib/llm/client";
 import { streamLlm } from "@/lib/llm/stream";
 import { coachRoundsUsed, coachSystemPrompt } from "@/lib/domain/coach";
+import { memoryContext, extractMemoryTags, addMemory, pruneMemories, MEMORY_EXTRACT_RULE } from "@/lib/domain/memory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,7 +46,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // system:默认助手 / 需求教练(chats.mode='coach',轮次 = 历史 assistant 消息数);
   // 会话绑定了本地工作目录时附加目录上下文,让 AI 知道当前在哪个项目里工作
   const baseSystem = chat.mode === "coach" ? coachSystemPrompt(coachRoundsUsed(history.filter((m) => m.role === "assistant").length)) : SYSTEM;
-  const system = chat.workdir ? `${baseSystem}\n\n当前会话绑定的本地工作目录:${chat.workdir}(用户本地机器上的实际路径;涉及文件/命令建议时以该目录为基准)。` : baseSystem;
+  // 长期记忆注入(普通对话):pinned 优先 + 最新,≤12 条;并引导 AI 输出 <memory> 标记供提取
+  const memCtx = chat.mode === "coach" ? "" : memoryContext(db);
+  let system = chat.workdir ? `${baseSystem}\n\n当前会话绑定的本地工作目录:${chat.workdir}(用户本地机器上的实际路径;涉及文件/命令建议时以该目录为基准)。` : baseSystem;
+  if (memCtx) system += `\n\n关于用户的长期记忆(供参考,不要主动罗列):\n${memCtx}`;
+  if (chat.mode !== "coach") system += `\n\n${MEMORY_EXTRACT_RULE}`;
   const llmMessages = [{ role: "system" as const, content: system }, ...windowed.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))];
   // streamLlm 内置 120s abort(chats 无 runner 清扫耦合,无阈值约束)
   const encoder = new TextEncoder();
@@ -74,6 +79,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             };
             db.insert(chatMessages).values(assistantMsg).run();
             db.update(chats).set({ updatedAt: finishedAt }).where(eq(chats.id, id)).run();
+            // 长期记忆:从 AI 回复的 <memory> 标记提取(尽力而为,失败不影响对话)
+            try {
+              for (const fact of extractMemoryTags(result.text)) addMemory(db, fact, id);
+              pruneMemories(db);
+            } catch { /* 记忆失败不影响主流程 */ }
             send({ done: true, message: assistantMsg });
             break;
           }

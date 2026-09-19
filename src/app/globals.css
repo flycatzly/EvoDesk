@@ -218,3 +218,17 @@ html[data-style="xfc"] main h1 { border-left: 5px solid var(--accent); padding-l
 html[data-style="dark-tech"] .input:focus { box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25); }
 html[data-style="dark-tech"] .accent-btn { box-shadow: 0 0 14px rgba(99, 102, 241, 0.35); }
 html[data-style="dark-tech"] main h1 { letter-spacing: .02em; }
+
+/* —— 数据大屏模式(html[data-tv]):画布电视墙 —— */
+html[data-tv] body { font-size: 18px; }
+html[data-tv] aside, html[data-tv] header, html[data-tv] nav { display: none !important; }
+html[data-tv] main { padding: 24px !important; }
+html[data-tv] main .surface { font-size: 1.15em; }
+html[data-tv] main h1 { font-size: 2rem; }
+html[data-tv] main h2 { font-size: 1.3rem; }
+html[data-tv] main .text-xs { font-size: 0.85rem; }
+html[data-tv] main .text-sm { font-size: 1.05rem; }
+html[data-tv] main .grid { gap: 1.5rem !important; }
+/* 隐藏大屏下无意义的交互控件(编辑按钮/取消勾选等仍安全:tv 模式本就只读浏览) */
+html[data-tv] main button { pointer-events: none; opacity: 0.75; }
+html[data-tv] main a { pointer-events: auto; }

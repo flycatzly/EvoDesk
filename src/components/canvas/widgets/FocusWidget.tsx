@@ -17,7 +17,11 @@ export function FocusWidget() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    try { setRounds(Number(localStorage.getItem("evodesk-focus-rounds") ?? "0") || 0); } catch { /* 忽略 */ }
+    // rAF 包裹:避免 effect 内同步 setState(react-hooks/set-state-in-effect)
+    const raf = requestAnimationFrame(() => {
+      try { setRounds(Number(localStorage.getItem("evodesk-focus-rounds") ?? "0") || 0); } catch { /* 忽略 */ }
+    });
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   const stop = useCallback(() => {

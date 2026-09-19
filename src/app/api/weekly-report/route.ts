@@ -16,7 +16,7 @@ function pickExecutor(db: ReturnType<typeof getDb>) {
 }
 
 // 周报生成:POST {} → 汇总本周 stats → AI 图文周报(markdown)→ 存为笔记(source='manual',标题带日期)
-export async function POST(req: NextRequest) {
+export async function POST(_req: NextRequest) {
   const db = getDb();
   const kv = readSettingsKv(db);
   const tz = typeof kv.timezone === "string" ? kv.timezone : "";
