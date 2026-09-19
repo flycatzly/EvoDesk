@@ -22,13 +22,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const content = typeof body.content === "string" ? body.content.trim() : "";
   if (!content) return new Response(JSON.stringify({ error: "content 必填" }), { status: 400, headers: { "content-type": "application/json" } });
 
-  // 执行器选择:指定 executor_id(须为启用的 llm)→ 会话默认 → executor 角色 → 首个启用
+  // 执行器选择:指定 executor_id → 会话默认(用户显式所选,予以尊重)→ executor/planner/triage → 首个启用。
+  // 隐式兜底链跳过 YOUR_* 种子占位符(必报 fetch failed),除非全是占位符;
+  // requested/chatDefault 是用户显式选择,不跳过。
   const allEx = db.select().from(executors).all() as (typeof executors.$inferSelect)[];
   const enabledLlm = allEx.filter((e) => e.type === "llm" && e.enabled);
+  const usableLlm = enabledLlm.filter((e) => !/^YOUR_/.test(e.model ?? ""));
   const requested = typeof body.executor_id === "string" ? enabledLlm.find((e) => e.id === body.executor_id) : undefined;
-  const ex = requested
-    ?? (chat.defaultExecutorId ? enabledLlm.find((e) => e.id === chat.defaultExecutorId) : undefined)
-    ?? enabledLlm.find((e) => e.role === "executor") ?? enabledLlm[0];
+  const chatDefault = chat.defaultExecutorId ? enabledLlm.find((e) => e.id === chat.defaultExecutorId) : undefined;
+  const pick = (pool: typeof enabledLlm) =>
+    pool.find((e) => e.role === "executor") ?? pool.find((e) => e.role === "planner") ?? pool.find((e) => e.role === "triage") ?? pool[0];
+  const ex = requested ?? chatDefault ?? pick(usableLlm.length > 0 ? usableLlm : enabledLlm);
   if (!ex) return new Response(JSON.stringify({ error: "未配置可用模型:请在执行器页启用一个 LLM 执行器,或导入供应商档案后派生" }), { status: 400, headers: { "content-type": "application/json" } });
   // 配置校验必须先于用户消息落库:所有 400 均为 pre-persist,客户端"移除乐观消息"的契约才始终成立
   let cfg;
