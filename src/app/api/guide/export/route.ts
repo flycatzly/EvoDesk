@@ -4,7 +4,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getDb } from "@/lib/db/client";
-import { resolveGuideDir, guideDirsFromDb } from "../route";
+import { resolveGuideDir } from "../route";
 import { scanGuide, readGuideDoc, docToHtml } from "@/lib/domain/guide";
 import { resolveVaultRoot } from "@/lib/domain/vault";
 import { isPathWithin } from "@/lib/domain/script-security";
@@ -109,7 +109,3 @@ h1.doc-title{font-size:1.4em}.doc h1{font-size:1.5em}code{background:#f6f8fa;pad
   }
 }
 
-// 源目录管理辅助导出(供页面添加白名单目录用)
-export async function GET() {
-  return NextResponse.json({ dirs: guideDirsFromDb() });
-}

@@ -25,9 +25,15 @@ export function resolveGuideDir(dir: string | null): string | null {
   return list.find((w) => path.resolve(w) === path.resolve(abs)) ?? null;
 }
 
-// 面试宝典(GET ?dir=&cat=&folder=&q=):源目录扫描 → 分类树 + 条目 + 关键字过滤(标题/正文)
+// 面试宝典(GET):
+//   无 dir 参数 → 返回 {dirs}(源目录列表,供页面下拉)
+//   有 dir      → 扫描该源:{root, categories, entries, ...}(cat/folder/q 过滤)
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
+  // 源目录列表模式:页面首次加载用
+  if (url.searchParams.get("list") === "1") {
+    return NextResponse.json({ dirs: guideDirsFromDb() });
+  }
   const root = resolveGuideDir(url.searchParams.get("dir"));
   if (!root) return NextResponse.json({ error: "目录不在宝典白名单内:先在下方添加文档源目录" }, { status: 400 });
   if (!fs.existsSync(root)) return NextResponse.json({ error: "目录不存在" }, { status: 400 });
