@@ -25,10 +25,14 @@ export function LibraryAiPanel({ root, entries, selected, onReload }: {
   const [similar, setSimilar] = useState<SimGroup[] | null>(null);
   const [plan, setPlan] = useState<AiPlan | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
+  type EnrichResult = { file: string; ok: boolean; note: string; after?: string; before?: string };
   const [pickedCats, setPickedCats] = useState<Set<string>>(new Set());
   const [pickedMerges, setPickedMerges] = useState<Set<string>>(new Set());
   const [pickedEnrich, setPickedEnrich] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
+  // 内容完善确认制:先"生成推荐修改"(仅预览,不写库),逐篇 diff 对比后确认才应用
+  const [enrichPreview, setEnrichPreview] = useState<Record<string, { before: string; after: string }>>({});
+  const [genBusy, setGenBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 导入 Obsidian
@@ -59,6 +63,51 @@ export function LibraryAiPanel({ root, entries, selected, onReload }: {
       setError("分析请求失败");
     } finally {
       setPlanning(false);
+    }
+  };
+
+  /** 单篇完善:调 AI 生成推荐修改(仅存预览,不写文件) */
+  const genEnrich = async (f: string) => {
+    if (genBusy || !root) return;
+    setGenBusy(f);
+    setError(null);
+    try {
+      // 读原文
+      const readRes = await fetch(`/api/guide`, { method: "POST", body: JSON.stringify({ dir: root, path: f }) });
+      void readRes;
+      // 走 ai-organize apply 单篇"仅生成不写入"不存在——这里用独立通道:直接调 summarize?不行。
+      // 简化:ai-organize apply 单文件模式(enrich 数组只含该文件),服务端先返回 diff 而不写入(add &dry_run)
+      const res = await fetch("/api/vault/ai-organize", {
+        method: "POST",
+        body: JSON.stringify({ action: "apply", root, plan: { categories: [], merges: [], enrich: [f] }, dry_run: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(errorOf(data, "生成推荐失败")); return; }
+      const enr = (data as { enrich?: EnrichResult[] }).enrich?.[0];
+      if (!enr?.ok) { setError(`生成失败:${enr?.note ?? ""}`); return; }
+      setEnrichPreview((prev) => ({ ...prev, [f]: { before: enr.before ?? "", after: enr.after ?? "" } }));
+    } catch {
+      setError("生成请求失败");
+    } finally {
+      setGenBusy(null);
+    }
+  };
+
+  /** 确认应用单篇推荐(真正写入,服务端备份原件) */
+  const acceptEnrich = async (f: string, after: string) => {
+    if (!root) return;
+    try {
+      const res = await fetch("/api/vault/ai-organize", {
+        method: "POST",
+        body: JSON.stringify({ action: "apply_enrich", root, path: f, content: after }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(errorOf(data, "写入失败")); return; }
+      setNotice(`已应用推荐修改:${f}(原件备份 .bak)`);
+      setEnrichPreview((prev) => { const n = { ...prev }; delete n[f]; return n; });
+      onReload();
+    } catch {
+      setError("写入请求失败");
     }
   };
 
@@ -190,12 +239,22 @@ export function LibraryAiPanel({ root, entries, selected, onReload }: {
           {plan && plan.enrich.length > 0 && (
             <div className="rounded p-2" style={{ border: "1px solid var(--border)" }}>
               <div className="font-medium mb-1">内容完善({plan.enrich.length} 篇)</div>
-              {plan.enrich.map((f) => (
-                <label key={f} className="flex items-center gap-2 py-0.5 cursor-pointer">
-                  <input type="checkbox" checked={pickedEnrich.has(f)} onChange={() => toggle(pickedEnrich, f, setPickedEnrich)} />
-                  <span className="truncate">{f}</span>
-                </label>
-              ))}
+              <div className="text-xs mb-1.5" style={{ color: "var(--muted)" }}>AI 先给出推荐修改(新原文对比),你逐篇确认后才会写入</div>
+              {plan.enrich.map((f) => {
+                const st = enrichPreview[f];
+                return (
+                  <div key={f} className="mb-2">
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" checked={pickedEnrich.has(f)} onChange={() => toggle(pickedEnrich, f, setPickedEnrich)} />
+                      <span className="truncate">{f}</span>
+                      {!st && <button className="ghost-btn text-xs px-1.5 py-0.5 ml-auto" onClick={() => void genEnrich(f)} disabled={genBusy === f}>
+                        {genBusy === f ? "生成中…" : "生成推荐修改"}
+                      </button>}
+                    </div>
+                    {st && <DiffBlock before={st.before} after={st.after} onAccept={() => acceptEnrich(f, st.after)} />}
+                  </div>
+                );
+              })}
             </div>
           )}
           {plan && (plan.categories.length > 0 || plan.merges.length > 0 || plan.enrich.length > 0) && (
@@ -205,6 +264,29 @@ export function LibraryAiPanel({ root, entries, selected, onReload }: {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** 行级 diff 对比(前/后),绿色=新增行,红色=删除行 */
+function DiffBlock({ before, after, onAccept }: { before: string; after: string; onAccept: () => void }) {
+  const a = before.split("\n");
+  const b = after.split("\n");
+  const bSet = new Set(b);
+  const rows: { kind: "same" | "add" | "del"; text: string }[] = [];
+  for (const line of a) if (!bSet.has(line)) rows.push({ kind: "del", text: line });
+  const aSet = new Set(a);
+  for (const line of b) if (!aSet.has(line)) rows.push({ kind: "add", text: line });
+  return (
+    <div className="mt-1 rounded p-2 max-h-56 overflow-auto" style={{ border: "1px solid var(--border)", background: "var(--surface-2)" }}>
+      <div className="text-xs font-mono whitespace-pre-wrap">
+        {rows.map((r, i) => (
+          <div key={i} style={{ color: r.kind === "add" ? "var(--ok)" : "var(--danger)", whiteSpace: "pre-wrap" }}>
+            {r.kind === "add" ? "+ " : r.kind === "del" ? "- " : "  "}{r.text}
+          </div>
+        ))}
+      </div>
+      <button className="accent-btn text-xs px-2 py-0.5 mt-1.5" onClick={onAccept}>确认应用此修改</button>
     </div>
   );
 }

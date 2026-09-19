@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "apply") {
+    const dryRun = body?.dry_run === true;
     const planRaw = body?.plan;
     if (!planRaw || typeof planRaw !== "object") return NextResponse.json({ error: "plan 必填" }, { status: 400 });
     const index = indexLibrary(root, { maxEntries: 500, maxDepth: 6 });
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
         mergeResults.push({ target: m.target, ok: false, note: e instanceof Error ? e.message : "合并失败" });
       }
     }
-    const enrichResults: { file: string; ok: boolean; note: string }[] = [];
+    const enrichResults: { file: string; ok: boolean; note: string; after?: string; before?: string }[] = [];
     for (const f of plan.enrich.slice(0, MAX_ENRICH_PER_APPLY)) {
       try {
         if (!ex) throw new Error("无可用 AI 执行器");
@@ -145,6 +146,24 @@ export async function POST(req: NextRequest) {
       enrich: enrichResults,
       backupDir: `_原始备份/${stamp}`,
     });
+  }
+
+  if (action === "apply_enrich") {
+    // 确认制的最后一步:写入用户已确认的推荐稿(写前备份原件)
+    if (!body) return NextResponse.json({ error: "需要请求体" }, { status: 400 });
+    const root2 = resolveVaultRoot(db, typeof body.root === "string" ? body.root : null);
+    if (!root2) return NextResponse.json({ error: "无可用资料库" }, { status: 400 });
+    const rel = typeof body.path === "string" ? body.path : "";
+    const content = typeof body.content === "string" ? body.content : null;
+    if (content === null) return NextResponse.json({ error: "content 必填" }, { status: 400 });
+    try {
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      const { writeDocWithBackup } = await import("@/lib/domain/library-ai");
+      writeDocWithBackup(root2, rel, content, stamp);
+      return NextResponse.json({ ok: true, backup: `_原始备份/${stamp}` });
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : "写入失败" }, { status: 500 });
+    }
   }
 
   if (action === "import") {

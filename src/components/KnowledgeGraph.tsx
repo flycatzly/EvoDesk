@@ -7,7 +7,8 @@ type GraphResp = { root: string; tag: string; tags: string[]; total: number; orp
 
 // 知识图谱(力导向):md 文件为节点、[[双链]] 为边;节点大小=连接数,颜色=标签哈希。
 // 纯 canvas 实现(无三方库):每帧斥力+弹簧+向心,稳定后自动降帧;拖拽节点/滚轮缩放。
-export function KnowledgeGraph({ root }: { root: string }) {
+export function KnowledgeGraph({ root, defaultCollapsed = true }: { root: string; defaultCollapsed?: boolean }) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [data, setData] = useState<GraphResp | null>(null);
   const [tag, setTag] = useState("");
@@ -173,10 +174,23 @@ export function KnowledgeGraph({ root }: { root: string }) {
     v.scale = Math.max(0.3, Math.min(4, v.scale * factor));
   };
 
+  if (collapsed) {
+    return (
+      <div className="surface p-3 mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">🕸️ 知识图谱</span>
+          <span className="text-xs" style={{ color: "var(--muted)" }}>双链网络可视化(默认收起以省资源)</span>
+          <button className="accent-btn text-xs px-2.5 py-1 ml-auto" onClick={() => { setCollapsed(false); void load(); }}>展开图谱</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="surface p-3 mb-4">
       <div className="flex flex-wrap gap-2 items-center mb-2">
         <span className="text-sm font-medium">🕸️ 知识图谱</span>
+        <button className="ghost-btn text-xs px-1.5 py-0.5" onClick={() => setCollapsed(true)} title="收起">▴ 收起</button>
         <select className="input text-xs max-w-40" value={tag} onChange={(e) => setTag(e.target.value)} aria-label="按标签筛选">
           <option value="">全部标签</option>
           {(data?.tags ?? []).map((t) => <option key={t} value={t}>{t}</option>)}

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { docToHtml, markdownToHtml } from "@/lib/domain/md-render";
 
 type GuideEntry = { relPath: string; name: string; title: string; category: string; folder: string; size: number; headline: string };
 type Category = { name: string; count: number; folders: { name: string; count: number }[] };
@@ -9,49 +10,6 @@ const fmtSize = (n: number) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024
 function errorOf(data: unknown, fallback: string): string {
   const err = data && typeof data === "object" ? (data as Record<string, unknown>).error : null;
   return typeof err === "string" && err ? err : fallback;
-}
-
-/** 简易 md 渲染(阅读面板):标题/粗体/行内代码/代码块/列表/引用/链接 */
-function renderMd(md: string): string {
-  const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const inline = (s: string) =>
-    escape(s)
-      .replace(/`([^`]+)`/g, "<code>$1</code>")
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
-  const out: string[] = [];
-  let inCode = false;
-  let inList = false;
-  let inQuote = false;
-  for (const raw of md.split(/\r?\n/)) {
-    const line = raw.replace(/\s+$/, "");
-    if (line.startsWith("```")) {
-      if (inCode) { out.push("</code></pre>"); inCode = false; }
-      else { if (inList) { out.push("</ul>"); inList = false; } if (inQuote) { out.push("</blockquote>"); inQuote = false; } out.push('<pre><code>'); inCode = true; }
-      continue;
-    }
-    if (inCode) { out.push(escape(raw)); continue; }
-    if (/^>\s?/.test(line)) {
-      if (!inQuote) { out.push("<blockquote>"); inQuote = true; }
-      out.push(inline(line.replace(/^>\s?/, "")));
-      continue;
-    }
-    if (inQuote) { out.push("</blockquote>"); inQuote = false; }
-    const h = /^(#{1,6})\s+(.*)$/.exec(line);
-    if (h) { if (inList) { out.push("</ul>"); inList = false; } out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); continue; }
-    if (/^\s*[-*]\s+/.test(line) || /^\s*\d+\.\s+/.test(line)) {
-      if (!inList) { out.push("<ul>"); inList = true; }
-      out.push(`<li>${inline(line.replace(/^\s*(?:[-*]|\d+\.)\s+/, ""))}</li>`);
-      continue;
-    }
-    if (inList) { out.push("</ul>"); inList = false; }
-    if (!line.trim()) continue;
-    out.push(`<p>${inline(line)}</p>`);
-  }
-  if (inList) out.push("</ul>");
-  if (inQuote) out.push("</blockquote>");
-  if (inCode) out.push("</code></pre>");
-  return out.join("\n");
 }
 
 type TreeNode = { name: string; label: string; path: string; children: TreeNode[]; count: number };
@@ -74,6 +32,8 @@ export function GuideView() {
   const [editMode, setEditMode] = useState(false);
   const [editDraft, setEditDraft] = useState("");
   const [savingDoc, setSavingDoc] = useState(false);
+  // 阅读弹框视图:preview=md 渲染 / edit=纯 md 编辑 / html=HTML 展示效果
+  const [viewMode, setViewMode] = useState<"preview" | "edit" | "html">("preview");
   const [exporting, setExporting] = useState<string | null>(null);
   // AI 问答
   const [qaQ, setQaQ] = useState("");
@@ -361,57 +321,40 @@ export function GuideView() {
           )}
         </div>
 
-        {/* 右:阅读详情(桌面端常驻;移动端为弹层) */}
-        <div className="surface p-4 w-[46%] shrink-0 max-h-[78vh] overflow-auto hidden lg:block sticky top-4">
-          {reading ? (
-            <>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs truncate" style={{ color: "var(--muted)" }}>{reading.path}</span>
-                {editMode ? (
-                  <>
-                    <button className="accent-btn text-xs px-2 py-1 ml-auto" onClick={() => void saveDoc()} disabled={savingDoc}>{savingDoc ? "保存中…" : "保存"}</button>
-                    <button className="ghost-btn text-xs px-1.5 py-1" onClick={() => { setEditMode(false); setEditDraft(""); }}>取消</button>
-                  </>
-                ) : (
-                  <>
-                    <button className="accent-btn text-xs px-2 py-1 ml-auto" onClick={() => { setEditDraft(reading.content); setEditMode(true); }}>✎ 编辑</button>
-                    <button className="ghost-btn text-xs px-1.5 py-1" onClick={() => setReading(null)}>✕</button>
-                  </>
-                )}
-              </div>
-              {editMode ? (
-                <textarea className="w-full text-xs font-mono p-2 rounded" style={{ background: "var(--surface-2)", minHeight: "60vh", outline: "none", border: "1px solid var(--border)", color: "var(--text)" }}
-                  value={editDraft} onChange={(e) => setEditDraft(e.target.value)} />
-              ) : (
-                <div className="text-sm guide-md" dangerouslySetInnerHTML={{ __html: renderMd(reading.content) }} />
-              )}
-            </>
-          ) : (
-            <div className="text-sm text-center py-16" style={{ color: "var(--muted)" }}>
-              点击左侧文章标题查看详情。<br />
-              <span className="text-xs">支持搜索、勾选导出、AI 问答。</span>
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* 移动端阅读弹层 */}
+      {/* 阅读弹框:渲染 / 纯 md 编辑 / HTML 效果 三视图切换 */}
       {reading && (
-        <div className="lg:hidden fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.5)" }} onClick={() => setReading(null)}>
-          <div className="surface p-4 max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-medium truncate">{reading.path}</span>
-              {!editMode && <button className="accent-btn text-xs px-2 py-0.5 ml-auto" onClick={() => { setEditDraft(reading.content); setEditMode(true); }}>✎ 编辑</button>}
-              <button className="ghost-btn text-xs px-1.5 py-0.5" onClick={() => { setReading(null); setEditMode(false); }}>✕</button>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.55)" }} onClick={() => { setReading(null); setEditMode(false); }}>
+          <div className="surface p-4 max-w-5xl w-full max-h-[88vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="text-xs truncate flex-1" style={{ color: "var(--muted)" }}>{reading.path}</span>
+              <div className="flex gap-1 text-xs">
+                <button className={`ghost-btn px-2 py-0.5 ${viewMode === "preview" ? "ring-1" : ""}`} style={viewMode === "preview" ? { color: "var(--accent)" } : undefined} onClick={() => setViewMode("preview")}>预览</button>
+                <button className={`ghost-btn px-2 py-0.5 ${viewMode === "edit" ? "ring-1" : ""}`} style={viewMode === "edit" ? { color: "var(--accent)" } : undefined} onClick={() => { if (viewMode !== "edit") { setEditDraft(reading.content); setEditMode(true); setViewMode("edit"); } }}>纯 md 编辑</button>
+                <button className={`ghost-btn px-2 py-0.5 ${viewMode === "html" ? "ring-1" : ""}`} style={viewMode === "html" ? { color: "var(--accent)" } : undefined} onClick={() => setViewMode("html")}>HTML 效果</button>
+              </div>
+              {editMode ? (
+                <>
+                  <button className="accent-btn text-xs px-2 py-1" onClick={() => void saveDoc()} disabled={savingDoc}>{savingDoc ? "保存中…" : "保存"}</button>
+                  <button className="ghost-btn text-xs px-1.5 py-1" onClick={() => { setEditMode(false); setViewMode("preview"); }}>取消</button>
+                </>
+              ) : (
+                <button className="accent-btn text-xs px-2 py-1" onClick={() => { setEditDraft(reading.content); setEditMode(true); setViewMode("edit"); }}>✎ 编辑</button>
+              )}
             </div>
-            {editMode ? (
-              <>
-                <textarea className="w-full text-xs font-mono p-2 rounded" style={{ background: "var(--surface-2)", minHeight: "55vh", outline: "none", border: "1px solid var(--border)", color: "var(--text)" }}
-                  value={editDraft} onChange={(e) => setEditDraft(e.target.value)} />
-                <button className="accent-btn text-xs px-3 py-1 mt-1.5" onClick={() => void saveDoc()} disabled={savingDoc}>{savingDoc ? "保存中…" : "保存"}</button>
-              </>
+            {editMode && viewMode === "edit" ? (
+              <textarea className="w-full flex-1 text-xs font-mono p-3 rounded overflow-auto" style={{ background: "var(--surface-2)", minHeight: "60vh", outline: "none", border: "1px solid var(--border)", color: "var(--text)" }}
+                value={editDraft} onChange={(e) => setEditDraft(e.target.value)} />
+            ) : viewMode === "html" ? (
+              <iframe
+                title="HTML 预览"
+                className="w-full flex-1 rounded"
+                style={{ minHeight: "60vh", border: "1px solid var(--border)", background: "#fff" }}
+                srcDoc={docToHtml(reading.path.split("/").pop() ?? "doc", editMode ? editDraft : reading.content)}
+              />
             ) : (
-              <div className="overflow-auto text-sm guide-md" dangerouslySetInnerHTML={{ __html: renderMd(reading.content) }} />
+              <div className="flex-1 overflow-auto text-sm guide-md" dangerouslySetInnerHTML={{ __html: markdownToHtml(editMode ? editDraft : reading.content) }} />
             )}
           </div>
         </div>
