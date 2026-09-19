@@ -50,7 +50,7 @@ export function KnowledgeGraph({ root }: { root: string }) {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // 力导向模拟 + 绘制
+  // 力导向模拟 + 绘制(accentColor 变化无需重启动画,故不列入依赖)
   const simRef = useRef<{ x: number; y: number; vx: number; vy: number; id: string }[]>([]);
   useEffect(() => {
     if (!data) return;
@@ -132,6 +132,7 @@ export function KnowledgeGraph({ root }: { root: string }) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
   const hit = useCallback((mx: number, my: number) => {
