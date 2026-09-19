@@ -4,6 +4,7 @@ import { SettingsForm } from "@/components/SettingsForm";
 import { ThemePicker } from "@/components/ThemePicker";
 import { BackupForm } from "@/components/BackupForm";
 import { NotifySettings } from "@/components/NotifySettings";
+import { InboundSettings } from "@/components/InboundSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,9 @@ export default function SettingsPage() {
       <SettingsForm initial={kv} />
       <div className="mt-4">
         <NotifySettings initial={kv.notify} />
+      </div>
+      <div className="mt-4">
+        <InboundSettings />
       </div>
       <div className="mt-4">
         <BackupForm />
