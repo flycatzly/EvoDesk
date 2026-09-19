@@ -69,7 +69,6 @@ export function CanvasBoard({
 
   // —— 持久化:乐观更新,失败回滚 ——
   const persist = async (nextGroups: ClientGroup[]) => {
-    const prev = groups;
     setGroups(nextGroups);
     try {
       const res = await fetch(`/api/canvases/${canvas.id}`, {
@@ -78,7 +77,8 @@ export function CanvasBoard({
       });
       if (!res.ok) throw new Error("save failed");
     } catch {
-      setGroups(prev);
+      // 函数式回滚:恢复到本次保存前状态,而非闭包里的过期快照(连续拖动时 prev 会过期)
+      setGroups((cur) => (cur === nextGroups ? groups : cur));
       flash("布局保存失败,已回滚");
     }
   };

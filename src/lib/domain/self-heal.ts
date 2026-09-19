@@ -178,7 +178,9 @@ ${result}
 
 /** 列表(新→旧)+ 统计 */
 export function listIssues(db: Db) {
-  const rows = db.select().from(issues).orderBy(desc(issues.updatedAt)).all();
+  // open 在前(新→旧),已修复/已忽略沉底,避免失败记录刷屏盖住新问题
+  const rows = db.select().from(issues).orderBy(desc(issues.updatedAt)).all()
+    .sort((a, b) => (a.status === "open" ? 0 : 1) - (b.status === "open" ? 0 : 1));
   const stats = {
     total: rows.length,
     open: rows.filter((r) => r.status === "open").length,
