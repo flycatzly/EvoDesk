@@ -1,4 +1,4 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 import type { Db } from "@/lib/db/test-util";
 import { flowRuns, stepRuns, flowTemplates, evolutionEvents } from "@/lib/db/schema";
 import type { StepDef } from "@/lib/domain/step-def";
@@ -13,11 +13,11 @@ export interface StepHotspot { stepIndex: number; stepName: string; runs: number
 export function collectHotspots(db: Db, templateId: string): StepHotspot[] {
   const runs = db.select().from(flowRuns).where(eq(flowRuns.templateId, templateId)).all() as (typeof flowRuns.$inferSelect)[];
   if (runs.length === 0) return [];
-  const byRun = new Map(runs.map((r) => [r.id, r]));
-  const steps = db.select().from(stepRuns).all() as (typeof stepRuns.$inferSelect)[];
+  const runIds = runs.map((r) => r.id);
+  // 按 runId 集合下推查询(命中 idx_step_runs_run),不做全表扫描
+  const steps = db.select().from(stepRuns).where(inArray(stepRuns.runId, runIds)).all() as (typeof stepRuns.$inferSelect)[];
   const acc = new Map<number, StepHotspot & { costSum: number }>();
   for (const s of steps) {
-    if (!byRun.has(s.runId)) continue;
     const h = acc.get(s.stepIndex) ?? { stepIndex: s.stepIndex, stepName: s.stepName, runs: 0, rejected: 0, manualOverrides: 0, avgCostUsd: 0, costSum: 0 };
     h.runs++;
     if (s.rejected > 0) h.rejected++;

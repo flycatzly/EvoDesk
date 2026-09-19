@@ -14,7 +14,7 @@ export async function* streamLlm(
 ): AsyncGenerator<string, LlmResult, void> {
   const url = cfg.protocol === "anthropic" ? `${cfg.apiBase}/v1/messages` : `${cfg.apiBase}/chat/completions`;
   const body = cfg.protocol === "anthropic"
-    ? { model: cfg.model, max_tokens: 4096, stream: true, system: messages.filter((m) => m.role === "system").map((m) => m.content).join("\n") || undefined, messages: messages.filter((m) => m.role !== "system") }
+    ? { model: cfg.model, max_tokens: 8192, stream: true, system: messages.filter((m) => m.role === "system").map((m) => m.content).join("\n") || undefined, messages: messages.filter((m) => m.role !== "system") }
     : { model: cfg.model, stream: true, stream_options: { include_usage: true }, messages };
   const res = await fetchImpl(url, {
     method: "POST",
