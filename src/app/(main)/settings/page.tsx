@@ -5,6 +5,7 @@ import { ThemePicker } from "@/components/ThemePicker";
 import { BackupForm } from "@/components/BackupForm";
 import { NotifySettings } from "@/components/NotifySettings";
 import { InboundSettings } from "@/components/InboundSettings";
+import { MySqlMigrateCard } from "@/components/MySqlMigrateCard";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,9 @@ export default function SettingsPage() {
       </div>
       <div className="mt-4">
         <InboundSettings />
+      </div>
+      <div className="mt-4">
+        <MySqlMigrateCard />
       </div>
       <div className="mt-4">
         <BackupForm />
