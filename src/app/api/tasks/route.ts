@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
+import { q } from "@/lib/db/q";
 import { tasks } from "@/lib/db/schema";
 import { tickRecurring } from "@/lib/domain/recurring";
 import { toApiTask } from "@/lib/api/serialize";
@@ -14,15 +15,17 @@ const dateRe = /^\d{4}-\d{2}-\d{2}$/;
 const normDate = (v: unknown): string | null =>
   typeof v === "string" && dateRe.test(v) && !Number.isNaN(Date.parse(v)) ? v : null;
 
+type TaskRow = typeof tasks.$inferSelect;
+
 export async function GET(req: NextRequest) {
-  // 注意:读接口内有写副作用(tickRecurring 到期补投)。同步 better-sqlite3 下无并发交错风险,前提是单进程。
-  const db = getDb();
-  tickRecurring(db);
+  // 读接口内有写副作用(tickRecurring 到期补投);统一走 await 数据访问,双方言一致。
+  const db = await getAnyDb();
+  tickRecurring(db as never);
   const status = req.nextUrl.searchParams.get("status");
   const projectId = req.nextUrl.searchParams.get("project_id");
   const rows = status
-    ? db.select().from(tasks).where(eq(tasks.status, status)).orderBy(desc(tasks.createdAt)).all()
-    : db.select().from(tasks).orderBy(desc(tasks.createdAt)).all();
+    ? await q.all<TaskRow>(db.select().from(tasks).where(eq(tasks.status, status)).orderBy(desc(tasks.createdAt)))
+    : await q.all<TaskRow>(db.select().from(tasks).orderBy(desc(tasks.createdAt)));
   const filtered = projectId ? rows.filter((t) => t.projectId === projectId) : rows;
   return NextResponse.json({ tasks: filtered.map(toApiTask) });
 }
@@ -32,7 +35,7 @@ export async function POST(req: NextRequest) {
   if (!body || typeof body.title !== "string" || !body.title.trim()) {
     return NextResponse.json({ error: "title 必填" }, { status: 400 });
   }
-  const db = getDb();
+  const db = await getAnyDb();
   const nowIso = new Date().toISOString();
   const task = {
     id: crypto.randomUUID(),
@@ -47,8 +50,8 @@ export async function POST(req: NextRequest) {
     createdAt: nowIso,
     updatedAt: nowIso,
   };
-  db.insert(tasks).values(task).run();
+  await q.run(db.insert(tasks).values(task));
   // 回读补全 DB 默认列(flowTemplateId 等)并统一 tags 数组契约(与 PATCH / [id] 的回读模式一致)
-  const created = db.select().from(tasks).where(eq(tasks.id, task.id)).all()[0];
-  return NextResponse.json({ task: toApiTask(created) }, { status: 201 });
+  const created = await q.one<TaskRow>(db.select().from(tasks).where(eq(tasks.id, task.id)));
+  return NextResponse.json({ task: toApiTask(created!) }, { status: 201 });
 }
