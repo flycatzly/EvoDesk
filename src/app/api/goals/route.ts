@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
+import { q } from "@/lib/db/q";
 import { goals } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
@@ -10,7 +11,7 @@ const CATEGORIES = ["reading", "fitness", "project", "custom"] as const;
 
 export async function GET(req: NextRequest) {
   const showArchived = new URL(req.url).searchParams.get("archived") === "1";
-  const rows = getDb().select().from(goals).all();
+  const rows = (await getAnyDb()).select().from(goals).all();
   const filtered = rows.filter((g) => showArchived || !g.archived);
   const sorted = [...filtered].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   return NextResponse.json({ goals: sorted });
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
     createdAt: nowIso,
     updatedAt: nowIso,
   };
-  getDb().insert(goals).values(goal).run();
-  const created = getDb().select().from(goals).where(eq(goals.id, goal.id)).all()[0];
+  (await getAnyDb()).insert(goals).values(goal).run();
+  const created = (await getAnyDb()).select().from(goals).where(eq(goals.id, goal.id)).all()[0];
   return NextResponse.json({ goal: created }, { status: 201 });
 }

@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
+import { q } from "@/lib/db/q";
 import { links } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type LinkRow = typeof links.$inferSelect;
+
 const isHttpUrl = (v: unknown): v is string => typeof v === "string" && /^https?:\/\/\S+/.test(v);
 
 export async function GET() {
-  const rows = getDb().select().from(links).all();
+  const db = await getAnyDb();
+  const rows = await q.all<LinkRow>(db.select().from(links));
   // 分组内按 sort 升序,同序按创建先后
   const sorted = [...rows].sort((a, b) => a.sort - b.sort || a.createdAt.localeCompare(b.createdAt));
   return NextResponse.json({ links: sorted });
@@ -24,6 +28,7 @@ export async function POST(req: NextRequest) {
   if (!isHttpUrl(body.url)) {
     return NextResponse.json({ error: "url 须为 http(s) 链接" }, { status: 400 });
   }
+  const db = await getAnyDb();
   const link = {
     id: crypto.randomUUID(),
     title: body.title.trim(),
@@ -32,7 +37,7 @@ export async function POST(req: NextRequest) {
     sort: typeof body.sort === "number" && Number.isFinite(body.sort) ? body.sort : 0,
     createdAt: new Date().toISOString(),
   };
-  getDb().insert(links).values(link).run();
-  const created = getDb().select().from(links).where(eq(links.id, link.id)).all()[0];
+  await q.run(db.insert(links).values(link));
+  const created = await q.one<LinkRow>(db.select().from(links).where(eq(links.id, link.id)));
   return NextResponse.json({ link: created }, { status: 201 });
 }

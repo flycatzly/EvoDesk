@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
+import { q } from "@/lib/db/q";
 import { notes } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
@@ -13,8 +14,9 @@ const normalizeTags = (v: unknown): string =>
   JSON.stringify(Array.isArray(v) ? v.filter((t): t is string => typeof t === "string").slice(0, 5) : []);
 
 export async function GET(_req: NextRequest) {
-  const db = getDb();
-  const rows = db.select().from(notes).all();
+  const db = await getAnyDb();
+  type NoteRow = typeof notes.$inferSelect;
+  const rows = await q.all<NoteRow>(db.select().from(notes));
   // pinned 置顶 → updatedAt desc(UTC-ISO 字典序)
   const sorted = [...rows].sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
@@ -42,9 +44,9 @@ export async function POST(req: NextRequest) {
     createdAt: nowIso,
     updatedAt: nowIso,
   };
-  getDb().insert(notes).values(note).run();
+  (await getAnyDb()).insert(notes).values(note).run();
   // 回读补全 DB 默认列,保证响应与库内行一致
-  const created = getDb().select().from(notes).where(eq(notes.id, note.id)).all()[0];
+  const created = (await getAnyDb()).select().from(notes).where(eq(notes.id, note.id)).all()[0];
   return NextResponse.json({ note: created }, { status: 201 });
 }
 
@@ -54,7 +56,7 @@ export async function PATCH(req: NextRequest) {
   if (typeof body.id !== "string" || !body.id) {
     return NextResponse.json({ error: "id 必填" }, { status: 400 });
   }
-  const db = getDb();
+  const db = await getAnyDb();
   const current = db.select().from(notes).where(eq(notes.id, body.id)).all()[0];
   if (!current) return NextResponse.json({ error: "笔记不存在" }, { status: 404 });
 
