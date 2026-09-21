@@ -57,7 +57,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "id 必填" }, { status: 400 });
   }
   const db = await getAnyDb();
-  const current = db.select().from(notes).where(eq(notes.id, body.id)).all()[0];
+  const current = await q.one(db.select().from(notes).where(eq(notes.id, body.id)));
   if (!current) return NextResponse.json({ error: "笔记不存在" }, { status: 404 });
 
   const patch: Partial<typeof notes.$inferInsert> = {};

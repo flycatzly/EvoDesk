@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
+import { q } from "@/lib/db/q";
 import { links } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
@@ -21,18 +22,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (typeof body.category === "string" && body.category.trim()) patch.category = body.category.trim();
   if (typeof body.sort === "number" && Number.isFinite(body.sort)) patch.sort = body.sort;
   if (Object.keys(patch).length === 0) return NextResponse.json({ error: "无可更新字段" }, { status: 400 });
-  const db = getDb();
-  db.update(links).set(patch).where(eq(links.id, id)).run();
-  const row = db.select().from(links).where(eq(links.id, id)).all()[0];
+  const db = await getAnyDb();
+  await q.run(db.update(links).set(patch).where(eq(links.id, id)));
+  const row = await q.one(db.select().from(links).where(eq(links.id, id)));
   if (!row) return NextResponse.json({ error: "链接不存在" }, { status: 404 });
   return NextResponse.json({ link: row });
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db = getDb();
-  const row = db.select().from(links).where(eq(links.id, id)).all()[0];
+  const db = await getAnyDb();
+  const row = await q.one(db.select().from(links).where(eq(links.id, id)));
   if (!row) return NextResponse.json({ error: "链接不存在" }, { status: 404 });
-  db.delete(links).where(eq(links.id, id)).run();
+  await q.run(db.delete(links).where(eq(links.id, id)));
   return NextResponse.json({ ok: true });
 }

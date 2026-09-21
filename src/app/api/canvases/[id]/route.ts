@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
+import { q } from "@/lib/db/q";
 import { canvases } from "@/lib/db/schema";
 import { layoutSchema } from "@/lib/domain/canvas";
 
@@ -9,14 +10,14 @@ export const dynamic = "force-dynamic";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const row = getDb().select().from(canvases).where(eq(canvases.id, id)).all()[0];
+  const row = (await getAnyDb()).select().from(canvases).where(eq(canvases.id, id)).all()[0];
   if (!row) return NextResponse.json({ error: "画布不存在" }, { status: 404 });
   return NextResponse.json({ canvas: row });
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db = getDb();
+  const db = (await getAnyDb());
   const existing = db.select().from(canvases).where(eq(canvases.id, id)).all()[0];
   if (!existing) return NextResponse.json({ error: "画布不存在" }, { status: 404 });
   if (existing.isTemplate) return NextResponse.json({ error: "内置模板不可修改" }, { status: 400 });
@@ -40,7 +41,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db = getDb();
+  const db = (await getAnyDb());
   const row = db.select().from(canvases).where(eq(canvases.id, id)).all()[0];
   if (!row) return NextResponse.json({ error: "画布不存在" }, { status: 404 });
   if (row.isTemplate) return NextResponse.json({ error: "内置模板不可删除" }, { status: 400 });
