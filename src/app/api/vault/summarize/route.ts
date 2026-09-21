@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
 import { settings, executors } from "@/lib/db/schema";
 import { resolveVaultRoot, resolveVaultPath, readNoteFile } from "@/lib/domain/vault";
+import type { Db } from "@/lib/db/test-util";
 import { callLlmWithRetry, executorLlmConfig, type LlmMessage } from "@/lib/llm/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type VaultMeta = Record<string, { summary: string; tags: string[]; at: string }>;
 
-const readMeta = (db: ReturnType<typeof getDb>): VaultMeta => {
+const readMeta = (db: Db): VaultMeta => {
   const row = db.select().from(settings).where(eq(settings.key, "vault_meta")).all()[0];
   if (!row) return {};
   try {
@@ -24,7 +25,7 @@ const readMeta = (db: ReturnType<typeof getDb>): VaultMeta => {
 export async function POST(req: NextRequest) {
   const raw = await req.json().catch(() => null);
   const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
-  const db = getDb();
+  const db = await getAnyDb();
   const root = resolveVaultRoot(db, body && typeof body.root === "string" ? body.root : null);
   if (!root) return NextResponse.json({ error: "无可用资料库" }, { status: 400 });
   const rel = body && typeof body.path === "string" ? body.path : "";
@@ -67,5 +68,5 @@ export async function POST(req: NextRequest) {
 
 // 元数据读取(GET):全部 vault_meta
 export async function GET() {
-  return NextResponse.json({ meta: readMeta(getDb()) });
+  return NextResponse.json({ meta: readMeta(await getAnyDb()) });
 }

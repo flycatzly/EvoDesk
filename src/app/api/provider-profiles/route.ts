@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
 import { providerProfiles } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: NextRequest) {
-  return NextResponse.json({ profiles: getDb().select().from(providerProfiles).all() });
+  return NextResponse.json({ profiles: (await (await getAnyDb()).select().from(providerProfiles)) });
 }
 
 export async function POST(req: NextRequest) {
@@ -22,6 +22,6 @@ export async function POST(req: NextRequest) {
     candidates: JSON.stringify(Array.isArray(body.candidates) ? body.candidates : []),
     source: "manual", createdAt: new Date().toISOString(),
   };
-  getDb().insert(providerProfiles).values(profile).run();
+  await (await getAnyDb()).insert(providerProfiles).values(profile);
   return NextResponse.json({ profile }, { status: 201 });
 }

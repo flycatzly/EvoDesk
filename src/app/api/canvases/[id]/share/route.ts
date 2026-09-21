@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
 import { canvases } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const query = new URL(req.url).searchParams;
   const revoke = query.get("revoke") === "1";
   const rotate = query.get("rotate") === "1";
-  const db = getDb();
+  const db = await getAnyDb();
   const row = db.select().from(canvases).where(eq(canvases.id, id)).all()[0];
   if (!row) return NextResponse.json({ error: "画布不存在" }, { status: 404 });
   if (row.isTemplate) return NextResponse.json({ error: "模板画布不可分享" }, { status: 400 });

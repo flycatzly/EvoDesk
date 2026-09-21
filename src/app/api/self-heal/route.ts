@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
 import { issues } from "@/lib/db/schema";
 import { collectIssues, applyFix, listIssues, aiAnalyzeIssue } from "@/lib/domain/self-heal";
 
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 //     analyze {id?}    → AI 补充分析单个或全部未分析的 open issue
 //     ignore {id}      → 标记忽略
 export async function GET() {
-  const db = getDb();
+  const db = await getAnyDb();
   const { rows, stats } = listIssues(db);
   return NextResponse.json({ issues: rows, stats });
 }
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   const raw = await req.json().catch(() => null);
   const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
   const action = body && typeof body.action === "string" ? body.action : "";
-  const db = getDb();
+  const db = await getAnyDb();
 
   if (action === "scan") {
     const created = collectIssues(db);

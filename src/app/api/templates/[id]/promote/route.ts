@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
 import { flowTemplates } from "@/lib/db/schema";
 import { promoteTemplate, EvolutionError } from "@/lib/domain/evolution";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db = getDb();
+  const db = await getAnyDb();
   try {
     promoteTemplate(db, id);
   } catch (e) {

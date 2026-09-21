@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
 import { projects } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
@@ -16,8 +16,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (typeof body.color === "string") patch.color = body.color;
   if (typeof body.archived === "boolean") patch.archived = body.archived;
   if (Object.keys(patch).length === 0) return NextResponse.json({ error: "无可更新字段" }, { status: 400 });
-  getDb().update(projects).set(patch).where(eq(projects.id, id)).run();
-  const row = getDb().select().from(projects).where(eq(projects.id, id)).all()[0];
+  await (await getAnyDb()).update(projects).set(patch).where(eq(projects.id, id));
+  const row = (await (await getAnyDb()).select().from(projects).where(eq(projects.id, id)))[0];
   if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
   return NextResponse.json({ project: row });
 }

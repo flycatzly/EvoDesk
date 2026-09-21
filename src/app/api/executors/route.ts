@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
 import { executors } from "@/lib/db/schema";
 import { EXECUTOR_ROLES } from "@/lib/domain/roles";
 
@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: NextRequest) {
-  return NextResponse.json({ executors: getDb().select().from(executors).all() });
+  return NextResponse.json({ executors: (await (await getAnyDb()).select().from(executors)) });
 }
 
 export async function POST(req: NextRequest) {
@@ -31,6 +31,6 @@ export async function POST(req: NextRequest) {
     protocol: body.protocol === "anthropic" ? "anthropic" : "openai",
     apiKeyRef, enabled: false, createdAt: new Date().toISOString(),
   };
-  getDb().insert(executors).values(executor).run();
+  await (await getAnyDb()).insert(executors).values(executor);
   return NextResponse.json({ executor }, { status: 201 });
 }

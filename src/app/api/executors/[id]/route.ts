@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
 import { executors } from "@/lib/db/schema";
 import { EXECUTOR_ROLES } from "@/lib/domain/roles";
 
@@ -30,8 +30,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (typeof body.working_dir === "string" || body.working_dir === null) patch.workingDir = body.working_dir as string | null;
   if (typeof body.auto_approve === "boolean") patch.autoApprove = body.auto_approve;
   if (Object.keys(patch).length === 0) return NextResponse.json({ error: "无可更新字段" }, { status: 400 });
-  getDb().update(executors).set(patch).where(eq(executors.id, id)).run();
-  const row = getDb().select().from(executors).where(eq(executors.id, id)).all()[0];
+  await (await getAnyDb()).update(executors).set(patch).where(eq(executors.id, id));
+  const row = (await (await getAnyDb()).select().from(executors).where(eq(executors.id, id)))[0];
   if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
   return NextResponse.json({ executor: row });
 }

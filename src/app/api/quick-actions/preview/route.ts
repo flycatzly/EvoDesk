@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
 import { quickActions, providerProfiles } from "@/lib/db/schema";
 import { renderQuickPayload } from "@/lib/domain/quick-actions";
 import { scanRisk } from "@/lib/domain/script-security";
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
   if (!body || typeof body.id !== "string" || !body.id) {
     return NextResponse.json({ error: "id 必填" }, { status: 400 });
   }
-  const db = getDb();
+  const db = await getAnyDb();
   const action = db.select().from(quickActions).where(eq(quickActions.id, body.id)).all()[0];
   if (!action) return NextResponse.json({ error: "快捷指令不存在" }, { status: 404 });
   if (!action.enabled) return NextResponse.json({ error: "快捷指令已禁用" }, { status: 409 });

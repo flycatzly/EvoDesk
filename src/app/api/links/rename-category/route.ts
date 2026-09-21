@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
+import { q } from "@/lib/db/q";
 import { links } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
@@ -18,6 +19,6 @@ export async function POST(req: NextRequest) {
   if (to.length > 50) {
     return NextResponse.json({ error: "分类名最长 50 字" }, { status: 400 });
   }
-  const result = getDb().update(links).set({ category: to }).where(eq(links.category, from)).run();
+  const result = await (await getAnyDb()).update(links).set({ category: to }).where(eq(links.category, from));
   return NextResponse.json({ ok: true, updated: result.changes });
 }

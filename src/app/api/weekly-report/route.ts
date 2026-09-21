@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db/client";
+
 import { executors, notes } from "@/lib/db/schema";
+import { getAnyDb } from "@/lib/db/data-source";
+import type { Db } from "@/lib/db/client";
 import { readSettingsKv } from "@/lib/db/read-settings";
 import { buildStats } from "@/lib/domain/stats";
 import { callLlmWithRetry, executorLlmConfig } from "@/lib/llm/client";
@@ -8,7 +10,7 @@ import { callLlmWithRetry, executorLlmConfig } from "@/lib/llm/client";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function pickExecutor(db: ReturnType<typeof getDb>) {
+function pickExecutor(db: Db) {
   const list = (db.select().from(executors).all() as (typeof executors.$inferSelect)[]).filter((e) => e.enabled && e.type === "llm");
   const usable = list.filter((e) => !/^YOUR_/.test(e.model ?? ""));
   const pool = usable.length > 0 ? usable : list;
@@ -17,7 +19,7 @@ function pickExecutor(db: ReturnType<typeof getDb>) {
 
 // 周报生成:POST {} → 汇总本周 stats → AI 图文周报(markdown)→ 存为笔记(source='manual',标题带日期)
 export async function POST(_req: NextRequest) {
-  const db = getDb();
+  const db = await getAnyDb();
   const kv = readSettingsKv(db);
   const tz = typeof kv.timezone === "string" ? kv.timezone : "";
   const stats = buildStats(db, new Date(), tz);

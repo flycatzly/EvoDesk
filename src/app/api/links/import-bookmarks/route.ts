@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
 import { links } from "@/lib/db/schema";
 import { parseBookmarksJson, pickCategory } from "@/lib/domain/bookmarks";
 
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   }
   if (folderSet) items = items.filter((i) => folderSet.has(i.folder));
 
-  const db = getDb();
+  const db = await getAnyDb();
   const existingUrls = new Set((db.select().from(links).all() as (typeof links.$inferSelect)[]).map((l) => l.url));
   const nowIso = new Date().toISOString();
   let added = 0;

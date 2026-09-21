@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
 import { recurringRules } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 const FREQS = ["daily", "weekdays", "weekly"];
 
 export async function GET(_req: NextRequest) {
-  return NextResponse.json({ rules: getDb().select().from(recurringRules).all() });
+  return NextResponse.json({ rules: (await (await getAnyDb()).select().from(recurringRules)) });
 }
 
 export async function POST(req: NextRequest) {
@@ -42,8 +42,8 @@ export async function POST(req: NextRequest) {
     nextRunAt: next.toISOString(),
     createdAt: new Date().toISOString(),
   };
-  getDb().insert(recurringRules).values(rule).run();
+  await (await getAnyDb()).insert(recurringRules).values(rule);
   // 回读补全 DB 默认列(lastTaskId 等),与 POST /api/tasks 的回读模式一致
-  const created = getDb().select().from(recurringRules).where(eq(recurringRules.id, rule.id)).all()[0];
+  const created = (await (await getAnyDb()).select().from(recurringRules).where(eq(recurringRules.id, rule.id)))[0];
   return NextResponse.json({ rule: created }, { status: 201 });
 }

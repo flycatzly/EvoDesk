@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, inArray } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
 import { links } from "@/lib/db/schema";
 import { autoCategoryFor, findDuplicateGroups, isJunkCategory, proposeRenames } from "@/lib/domain/link-organize";
 
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
   const action = body && typeof body.action === "string" ? body.action : "";
   const scopeAll = body?.scope === "all";
-  const db = getDb();
+  const db = await getAnyDb();
   const rows = sorted(db.select().from(links).all() as LinkRow[]);
 
   const autoTargets = (all: boolean) =>

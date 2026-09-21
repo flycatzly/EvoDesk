@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
 import { tasks, executors, settings, flowTemplates } from "@/lib/db/schema";
 import { executorLlmConfig } from "@/lib/llm/client";
 import { triageTask } from "@/lib/domain/triage";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // 分诊流水线(设计 §7):LLM 分诊(失败即降级)→ routeTemplate 打分匹配 → 持久化 tags/complexity/flowTemplateId(status→triaging)。
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db = getDb();
+  const db = await getAnyDb();
   const task = db.select().from(tasks).where(eq(tasks.id, id)).all()[0];
   if (!task) return NextResponse.json({ error: "not found" }, { status: 404 });
   // 分诊只属于前置环节:running 之后的状态不允许被外部调用拉回(triaging→triaging 保留,确认卡片可重分诊)
