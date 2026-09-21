@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   if (!content) return NextResponse.json({ error: "content 必填" }, { status: 400 });
   const db = await getAnyDb();
   const id = crypto.randomUUID();
-  db.insert(memories).values({ id, content: content.slice(0, 200), sourceChatId: null, pinned: false, hits: 0, createdAt: new Date().toISOString() }).run();
+  db.insert(memories).values({ id, content: content.slice(0, 200), sourceChatId: null, pinned: false, hits: 0, createdAt: new Date().toISOString() }).run(); // sqlite-sync in domain, route-level below
   return NextResponse.json({ ok: true, id });
 }
 
@@ -34,7 +34,7 @@ export async function PATCH(req: NextRequest) {
   if (typeof body.pinned === "boolean") patch.pinned = body.pinned;
   if (typeof body.content === "string" && body.content.trim()) patch.content = body.content.trim().slice(0, 200);
   if (Object.keys(patch).length === 0) return NextResponse.json({ error: "无可更新字段" }, { status: 400 });
-  (await getAnyDb()).update(memories).set(patch).where(eq(memories.id, body.id)).run();
+  await q.run((await getAnyDb()).update(memories).set(patch).where(eq(memories.id, body.id)));
   return NextResponse.json({ ok: true });
 }
 
@@ -42,6 +42,6 @@ export async function DELETE(req: NextRequest) {
   const raw = await req.json().catch(() => null);
   const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
   if (!body || typeof body.id !== "string") return NextResponse.json({ error: "id 必填" }, { status: 400 });
-  (await getAnyDb()).delete(memories).where(eq(memories.id, body.id)).run();
+  await q.run((await getAnyDb()).delete(memories).where(eq(memories.id, body.id)));
   return NextResponse.json({ ok: true });
 }

@@ -11,7 +11,9 @@ const CATEGORIES = ["reading", "fitness", "project", "custom"] as const;
 
 export async function GET(req: NextRequest) {
   const showArchived = new URL(req.url).searchParams.get("archived") === "1";
-  const rows = (await getAnyDb()).select().from(goals).all();
+  type GoalRow = typeof goals.$inferSelect;
+  const db = await getAnyDb();
+  const rows = await q.all<GoalRow>(db.select().from(goals));
   const filtered = rows.filter((g) => showArchived || !g.archived);
   const sorted = [...filtered].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   return NextResponse.json({ goals: sorted });
@@ -40,7 +42,7 @@ export async function POST(req: NextRequest) {
     createdAt: nowIso,
     updatedAt: nowIso,
   };
-  (await getAnyDb()).insert(goals).values(goal).run();
-  const created = (await getAnyDb()).select().from(goals).where(eq(goals.id, goal.id)).all()[0];
+  await q.run((await getAnyDb()).insert(goals).values(goal));
+  const created = await q.one((await getAnyDb()).select().from(goals).where(eq(goals.id, goal.id)));
   return NextResponse.json({ goal: created }, { status: 201 });
 }
