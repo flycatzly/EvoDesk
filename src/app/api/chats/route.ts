@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { desc } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
+import { q } from "@/lib/db/q";
 import { chats } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: NextRequest) {
-  return NextResponse.json({ chats: getDb().select().from(chats).orderBy(desc(chats.updatedAt)).all() });
+  const db = await getAnyDb();
+  const rows = await q.all(db.select().from(chats).orderBy(desc(chats.updatedAt)));
+  return NextResponse.json({ chats: rows });
 }
 
 export async function POST(req: NextRequest) {
@@ -22,6 +25,7 @@ export async function POST(req: NextRequest) {
     defaultExecutorId: typeof body.default_executor_id === "string" ? body.default_executor_id : null,
     createdAt: nowIso, updatedAt: nowIso,
   };
-  getDb().insert(chats).values(chat).run();
+  const db = await getAnyDb();
+  await q.run(db.insert(chats).values(chat));
   return NextResponse.json({ chat }, { status: 201 });
 }

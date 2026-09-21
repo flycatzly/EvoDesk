@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, asc } from "drizzle-orm";
 import fs from "node:fs";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
+import { q } from "@/lib/db/q";
 import { chats, chatMessages } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db = getDb();
+  const db = (await getAnyDb());
   const chat = db.select().from(chats).where(eq(chats.id, id)).all()[0];
   if (!chat) return NextResponse.json({ error: "not found" }, { status: 404 });
   const messages = db.select().from(chatMessages).where(eq(chatMessages.chatId, id)).orderBy(asc(chatMessages.createdAt)).all();
@@ -36,7 +37,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (typeof body.default_executor_id === "string") patch.defaultExecutorId = body.default_executor_id;
   if (Object.keys(patch).length === 0) return NextResponse.json({ error: "无可更新字段" }, { status: 400 });
   patch.updatedAt = new Date().toISOString();
-  const db = getDb();
+  const db = (await getAnyDb());
   db.update(chats).set(patch).where(eq(chats.id, id)).run();
   const row = db.select().from(chats).where(eq(chats.id, id)).all()[0];
   if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -46,7 +47,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db = getDb();
+  const db = (await getAnyDb());
   const chat = db.select().from(chats).where(eq(chats.id, id)).all()[0];
   if (!chat) return NextResponse.json({ error: "not found" }, { status: 404 });
   db.delete(chatMessages).where(eq(chatMessages.chatId, id)).run();

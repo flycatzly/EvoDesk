@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq, asc } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb } from "@/lib/db/data-source";
+import { q } from "@/lib/db/q";
 import { chats, chatMessages, executors } from "@/lib/db/schema";
 import { executorLlmConfig } from "@/lib/llm/client";
 import { streamLlm } from "@/lib/llm/stream";
@@ -14,7 +15,7 @@ const SYSTEM = "你是 EvoDesk 本地个人工作台内置的 AI 助手,回答�
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db = getDb();
+  const db = (await getAnyDb());
   const chat = db.select().from(chats).where(eq(chats.id, id)).all()[0];
   if (!chat) return new Response(JSON.stringify({ error: "会话不存在" }), { status: 404, headers: { "content-type": "application/json" } });
   const raw = await req.json().catch(() => null);
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // 执行器选择:指定 executor_id → 会话默认(用户显式所选,予以尊重)→ executor/planner/triage → 首个启用。
   // 隐式兜底链跳过 YOUR_* 种子占位符(必报 fetch failed),除非全是占位符;
   // requested/chatDefault 是用户显式选择,不跳过。
-  const allEx = db.select().from(executors).all() as (typeof executors.$inferSelect)[];
+  const allEx = await q.all(db.select().from(executors)) as (typeof executors.$inferSelect)[];
   const enabledLlm = allEx.filter((e) => e.type === "llm" && e.enabled);
   const usableLlm = enabledLlm.filter((e) => !/^YOUR_/.test(e.model ?? ""));
   const requested = typeof body.executor_id === "string" ? enabledLlm.find((e) => e.id === body.executor_id) : undefined;
