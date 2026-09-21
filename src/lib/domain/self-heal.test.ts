@@ -53,13 +53,19 @@ describe("applyFix 自动修复(有界)", () => {
     const task = (db.select().from(tasks).all() as (typeof tasks.$inferSelect)[]).find((t) => t.status === "ready")!;
     const tpl = (db.select().from(flowTemplates).all() as (typeof flowTemplates.$inferSelect)[]).find((t) => t.steps.includes("自检"))!;
     db.update(tasks).set({ flowTemplateId: tpl.id }).where(eq(tasks.id, task.id)).run();
-    const runId = startRun(db, task.id).runId;
+    const runId = (await startRun(db, task.id)).runId;
     // 步骤 0/1 置 done,步骤 2(自检)置失败 → 触发入账
-    db.update(stepRuns).set({ status: "done", finishedAt: nowIso() }).where(eq(stepRuns.runId, runId)).run();
-    const selfCheck = db.select().from(stepRuns).where(eq(stepRuns.runId, runId)).all()
-      .map((s) => s as typeof stepRuns.$inferSelect)
-      .find((s) => s.stepName === "自检")!;
-    db.update(stepRuns).set({ status: "failed", error: "无可用的 reviewer 执行器,可在执行器页启用或改用人工填写" }).where(eq(stepRuns.id, selfCheck.id)).run();
+    const allSteps = await db.select().from(stepRuns).where(eq(stepRuns.runId, runId)) as unknown as (typeof stepRuns.$inferSelect)[];
+    const selfCheck = allSteps.find((s) => s.stepName === "自检")!;
+    // 自检之前的全部置 done,使自检成为"当前步"
+    for (const st of allSteps) {
+      if (st.stepIndex < selfCheck.stepIndex) {
+        await db.update(stepRuns).set({ status: "done", finishedAt: nowIso() }).where(eq(stepRuns.id, st.id));
+      }
+    }
+    // 同样需要 flowRuns.status = running(applyFix 的 runLlmStep 要求)
+    // 已在外部设置
+    await db.update(stepRuns).set({ status: "failed", error: "无可用的 reviewer 执行器,可在执行器页启用或改用人工填写" }).where(eq(stepRuns.id, selfCheck.id));
     db.update(flowRuns).set({ status: "running" }).where(eq(flowRuns.id, runId)).run();
     collectIssues(db);
     const issue = listIssues(db).rows.find((r) => r.sourceId === selfCheck.id)!;

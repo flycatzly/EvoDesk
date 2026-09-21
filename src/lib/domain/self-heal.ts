@@ -129,7 +129,7 @@ ${result}
       bump("failed", "失败步骤不存在(可能已被清理)");
       return { ok: false, result: "步骤不存在" };
     }
-    retryStep(db, s.runId, s.stepIndex);
+    await retryStep(db, s.runId, s.stepIndex);
     if (s.executorType !== "llm") {
       bump("pending", "已复位为待执行(script/人工步骤请到执行视图继续)");
       return { ok: true, result: "已复位待执行" };
