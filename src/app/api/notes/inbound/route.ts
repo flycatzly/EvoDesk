@@ -120,10 +120,24 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, file: fileName, synced: kv.inbound_git_push === true, gitNote });
 }
 
-// 生成/重置随记令牌(GET = 查看是否存在,POST = 生成新令牌)
+// 生成/重置随记令牌(GET = 查看状态并返回局域网接入地址,PUT = 生成新令牌)
 export async function GET() {
   const kv = readSettingsKv(getDb());
-  return NextResponse.json({ hasToken: typeof kv.inbound_token === "string" && kv.inbound_token.length > 0 });
+  // 局域网地址:手机/其他设备无法访问 localhost,需用本机内网 IP
+  let lanUrl: string | null = null;
+  try {
+    const os = await import("node:os");
+    const nets = os.networkInterfaces();
+    for (const addrs of Object.values(nets)) {
+      const found = (addrs ?? []).find((a) => a.family === "IPv4" && !a.internal);
+      if (found) { lanUrl = `http://${found.address}:${process.env.PORT ?? "3000"}`; break; }
+    }
+  } catch { /* 取不到就用 null,前端只显示本机地址 */ }
+  return NextResponse.json({
+    hasToken: typeof kv.inbound_token === "string" && kv.inbound_token.length > 0,
+    port: process.env.PORT ?? "3000",
+    lanUrl,
+  });
 }
 
 export async function PUT(req: NextRequest) {

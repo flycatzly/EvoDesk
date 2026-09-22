@@ -10,7 +10,8 @@
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
-    "db:generate:mysql": "drizzle-kit generate --config=drizzle-mysql.config.ts"
+    "db:generate:mysql": "drizzle-kit generate --config=drizzle-mysql.config.ts",
+    "wechat:bridge": "node scripts/wechat-bridge.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -11,6 +11,7 @@ export function InboundSettings() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState("");
+  const [lanUrl, setLanUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
@@ -18,7 +19,9 @@ export function InboundSettings() {
       void (async () => {
         try {
           const res = await fetch("/api/notes/inbound");
-          setHasToken((await res.json()).hasToken);
+          const d = await res.json();
+          setHasToken(d.hasToken);
+          if (typeof d.lanUrl === "string") setLanUrl(d.lanUrl);
           const s = await (await fetch("/api/settings")).json();
           const sub = s.settings?.inbound_subdir;
           if (typeof sub === "string" && sub) setSubdir(sub);
@@ -67,12 +70,27 @@ export function InboundSettings() {
         ) : (
           <button className="accent-btn text-xs px-2.5 py-1" onClick={() => void genToken()}>生成随记令牌</button>
         )}
-        {token && (
-          <div className="mt-2 text-xs break-all rounded p-2" style={{ background: "var(--surface-2)", fontFamily: "monospace" }}>
-            {endpoint}
-            <button className="ghost-btn text-xs px-1.5 py-0.5 ml-2" onClick={() => { void navigator.clipboard.writeText(endpoint); setMsg("已复制接入地址"); }}>复制</button>
-          </div>
-        )}
+      {token && (
+        <div className="mt-2 text-xs break-all rounded p-2" style={{ background: "var(--surface-2)", fontFamily: "monospace" }}>
+          {endpoint}
+          <button className="ghost-btn text-xs px-1.5 py-0.5 ml-2" onClick={() => { void navigator.clipboard.writeText(endpoint); setMsg("已复制接入地址"); }}>复制</button>
+        </div>
+      )}
+      {token && (
+        <div className="mt-2 text-xs" style={{ color: "var(--muted)" }}>
+          {lanUrl ? (
+            <>手机/其他设备请用局域网地址(手机与电脑须同一 Wi-Fi):
+              <span className="font-mono break-all" style={{ color: "var(--text)" }}>{lanUrl}/api/notes/inbound?token=…</span>
+              <button className="ghost-btn text-xs px-1.5 py-0.5 ml-1.5" onClick={() => { void navigator.clipboard.writeText(`${lanUrl}/api/notes/inbound?token=${token ?? ""}`); setMsg("已复制局域网接入地址"); }}>复制</button>
+              <div>首次从手机访问不通时,以管理员运行一次:
+                <span className="font-mono break-all" style={{ color: "var(--text)" }}>netsh advfirewall firewall add rule name="EvoDesk" dir=in action=allow protocol=TCP localport=3000</span>
+              </div>
+            </>
+          ) : (
+            <span>未检测到局域网 IP,手机接入请改用电脑的内网 IP 地址。</span>
+          )}
+        </div>
+      )}
       </div>
 
       <label className="block mb-3">
@@ -95,6 +113,7 @@ export function InboundSettings() {
             <div><b style={{ color: "var(--text)" }}>iOS 快捷指令</b>:新建快捷指令 → 添加「要求输入」(提示语:随记)→「URL」填上面的接入地址 →「获取 URL 内容」方法 POST,正文选「JSON」,加字段 text = 提供的输入 → 运行测试。</div>
             <div><b style={{ color: "var(--text)" }}>Android(Tasker/HTTP Request)</b>:事件选任意触发(如通知栏磁贴),HTTP Request POST 到接入地址,Body 传 JSON {'{'}&quot;text&quot;: &quot;随记内容&quot;{'}'}。</div>
             <div><b style={{ color: "var(--text)" }}>微信转发</b>:把聊天里的文字转发给支持 HTTP Webhook 的转发工具(如微秘书/自建 Hook),由它 POST 到本地址,效果等同微信随记机器人。</div>
+            <div><b style={{ color: "var(--text)" }}>本机微信(推荐,零配置)</b>:电脑上运行 <span className="font-mono">npm run wechat:bridge</span> 启动剪贴板桥 —— 在 PC 微信里对任何消息「复制」,1-2 秒内自动存入随记目录,无需任何第三方工具或机器人(低封号风险,比 Hook 方案安全)。</div>
             <div>保存成功返回 {'{'}&quot;ok&quot;:true,&quot;file&quot;:&quot;…&quot;{'}'};开启自动推送时其他设备 git pull 即见。</div>
           </div>
         </details>
