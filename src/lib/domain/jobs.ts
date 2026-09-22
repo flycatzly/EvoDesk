@@ -176,7 +176,10 @@ export function spawnJobsScript({ kind, args, db, params = {}, scriptPath: scrip
     }
     const result = parseScriptResult(cur.output);
     if (!result) {
-      finishRun(db, cur, "failed", `未解析到 RESULT 结果(退出码 ${code})`);
+      // 摘要优先取脚本最后的 "! " 结论行(如「! 未登录 —— …」),比笼统的"未解析到 RESULT"可操作
+      const bangLines = cur.output.split("\n").filter((l) => l.trimStart().startsWith("!"));
+      const last = bangLines[bangLines.length - 1]?.trim();
+      finishRun(db, cur, "failed", `${last ?? "未解析到 RESULT 结果"}(退出码 ${code})`);
       return;
     }
     const { inserted, updated } = upsertJobs(db, result.jobs, result.searchMeta ?? params);

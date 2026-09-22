@@ -380,9 +380,11 @@ def cmd_setup_chrome(args) -> None:
     log("轮询登录态(wt2 令牌),最长等 10 分钟;每 30 秒提示一次进度…")
     deadline = time.time() + 600
     last_note = -1
+    cdp_down = 0  # 连续 CDP 连接失败次数:浏览器窗口被关时快速失败,不刷屏等满 10 分钟
     while time.time() < deadline:
         try:
             ws, target_id = open_zhipin_tab()
+            cdp_down = 0
             logged, why = login_state(ws)
             ws.close()
             # 把 zhipin 页签激活到窗口前台(复用旧实例时登录页常被埋在其他标签后面,用户容易看不到)
@@ -406,7 +408,12 @@ def cmd_setup_chrome(args) -> None:
                 last_note = remaining
                 log(f"等待登录中…(剩约 {remaining} 分钟){(' —— ' + why) if why else ''}")
         except (OSError, ValueError, RuntimeError, TimeoutError) as e:
-            warn(f"等待中:{e}")
+            cdp_down += 1
+            # 同一原因只提示一次(避免 WinError 10061 每 5 秒刷屏);连续 30 秒连不上 = 窗口被关
+            if cdp_down == 1:
+                warn(f"等待中:{e}(若已关闭专用浏览器窗口,请重新点「启动 Chrome」)")
+            elif cdp_down >= 6:
+                sys.exit("! 专用浏览器窗口已关闭或 CDP 连接丢失:请重新点「启动 Chrome」,并保持窗口开启直到完成登录")
         time.sleep(5)
     sys.exit("! 等待登录超时(10 分钟):请在专用浏览器窗口完成登录后,点「连通自检」确认,无需重跑 setup")
 
