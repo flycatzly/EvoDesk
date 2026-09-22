@@ -77,6 +77,11 @@ export async function PATCH(req: NextRequest) {
     if (typeof body.pinned !== "boolean") return NextResponse.json({ error: "pinned 须为布尔值" }, { status: 400 });
     patch.pinned = body.pinned;
   }
+  if ("task_id" in body) {
+    // 收件箱预填流程回写关联:已有关联时保留原值(幂等,不覆盖)
+    if (typeof body.task_id !== "string" || !body.task_id) return NextResponse.json({ error: "task_id 须为非空字符串" }, { status: 400 });
+    if (!(current as { taskId?: string | null }).taskId) patch.taskId = body.task_id;
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "无可更新字段" }, { status: 400 });
   }

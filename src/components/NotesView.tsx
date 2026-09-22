@@ -88,21 +88,9 @@ export function NotesView({ notes: rows }: { notes: NoteRow[] }) {
     }
   };
 
-  const toTask = async (id: string) => {
-    if (busy) return;
-    setBusy(`totask-${id}`);
-    setNote(null);
-    try {
-      const res = await fetch(`/api/notes/${id}/to-task`, { method: "POST" });
-      const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-      if (!res.ok) { setNote(errorOf(data, "转任务失败,请重试")); return; }
-      setNote("已创建任务并关联");
-      router.refresh();
-    } catch {
-      setNote("网络异常,请重试");
-    } finally {
-      setBusy(null);
-    }
+  // 转任务:跳转收件箱并自动带入笔记内容,用户确认后创建并自动关联
+  const toTask = (id: string) => {
+    router.push(`/inbox?note=${id}`);
   };
 
   const toVault = async (id: string) => {
@@ -225,8 +213,8 @@ export function NotesView({ notes: rows }: { notes: NoteRow[] }) {
                     <button type="button" disabled={!!busy} className="ghost-btn px-2 py-1 text-xs" onClick={() => startEdit(n)}>
                       编辑
                     </button>
-                    <button type="button" disabled={!!busy} className="ghost-btn px-2 py-1 text-xs" onClick={() => toTask(n.id)}>
-                      {busy === `totask-${n.id}` ? "创建中…" : "转任务"}
+                    <button type="button" className="ghost-btn px-2 py-1 text-xs" onClick={() => toTask(n.id)} title="跳转收件箱,自动带入笔记内容">
+                      转任务
                     </button>
                     <button type="button" disabled={!!busy} className="ghost-btn px-2 py-1 text-xs" onClick={() => toVault(n.id)}>
                       {busy === `tovault-${n.id}` ? "存入中…" : "存入 Obsidian"}
