@@ -34,6 +34,14 @@ export function GuideView() {
   const [savingDoc, setSavingDoc] = useState(false);
   // 阅读弹框视图:preview=md 渲染 / edit=纯 md 编辑 / html=HTML 展示效果
   const [viewMode, setViewMode] = useState<"preview" | "edit" | "html">("preview");
+  // 文档弹窗撑满浏览器(fixed 全屏);Esc 退出
+  const [docMaxi, setDocMaxi] = useState(false);
+  useEffect(() => {
+    if (!docMaxi || !reading) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setDocMaxi(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [docMaxi, reading]);
   const [exporting, setExporting] = useState<string | null>(null);
   // AI 问答
   const [qaQ, setQaQ] = useState("");
@@ -325,14 +333,22 @@ export function GuideView() {
 
       {/* 阅读弹框:渲染 / 纯 md 编辑 / HTML 效果 三视图切换 */}
       {reading && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.55)" }} onClick={() => { setReading(null); setEditMode(false); }}>
-          <div className="surface p-4 max-w-5xl w-full max-h-[88vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.55)" }} onClick={() => { setReading(null); setEditMode(false); setDocMaxi(false); }}>
+          <div
+            className={`surface p-4 flex flex-col overflow-hidden ${docMaxi ? "fixed inset-0 z-[80] rounded-none" : "max-w-5xl w-full max-h-[88vh]"}`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex flex-wrap items-center gap-2 mb-2">
               <span className="text-xs truncate flex-1" style={{ color: "var(--muted)" }}>{reading.path}</span>
               <div className="flex gap-1 text-xs">
                 <button className={`ghost-btn px-2 py-0.5 ${viewMode === "preview" ? "ring-1" : ""}`} style={viewMode === "preview" ? { color: "var(--accent)" } : undefined} onClick={() => setViewMode("preview")}>预览</button>
                 <button className={`ghost-btn px-2 py-0.5 ${viewMode === "edit" ? "ring-1" : ""}`} style={viewMode === "edit" ? { color: "var(--accent)" } : undefined} onClick={() => { if (viewMode !== "edit") { setEditDraft(reading.content); setEditMode(true); setViewMode("edit"); } }}>纯 md 编辑</button>
                 <button className={`ghost-btn px-2 py-0.5 ${viewMode === "html" ? "ring-1" : ""}`} style={viewMode === "html" ? { color: "var(--accent)" } : undefined} onClick={() => setViewMode("html")}>HTML 效果</button>
+                <button
+                  className="ghost-btn px-2 py-0.5"
+                  onClick={() => setDocMaxi((v) => !v)}
+                  title={docMaxi ? "还原窗口大小(Esc)" : "撑满浏览器(Esc 退出)"}
+                >{docMaxi ? "⤡ 还原" : "⤢ 撑满"}</button>
               </div>
               {editMode ? (
                 <>
