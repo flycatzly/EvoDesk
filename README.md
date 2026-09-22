@@ -43,6 +43,15 @@ dev(3000) 与生产(3001) 两个独立窗口,与 ZCode 等会话工具无关,关
 
 ---
 
+## 🗄️ 数据源(SQLite ⇄ MySQL)
+
+默认 SQLite 零配置;要切换 MySQL:配置 `.env` 的 `DATABASE_URL=mysql://…` 后重启,
+首次连接自动建表并写入种子数据;已有 SQLite 数据用设置页「数据源迁移」卡片一键搬迁,
+或 `POST /api/db/migrate-from-sqlite`。完整步骤、能力矩阵与常见问题见
+**[docs/DATA-SOURCE.md](docs/DATA-SOURCE.md)**。
+
+---
+
 ## 🔑 接入 AI(推荐路径)
 
 1. 「执行器」页 → 供应商档案 → 填入你的 Claude Code 启动器配置目录(含 `*.txt`),
