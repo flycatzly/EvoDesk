@@ -7,6 +7,7 @@ import { executorLlmConfig, callLlmWithRetry } from "@/lib/llm/client";
 import { resolveStepExecutor, renderPrompt, type ResolvedExecutor } from "@/lib/domain/executor-resolve";
 import { refreshTemplateStats } from "@/lib/domain/template-stats";
 import { recordIssue } from "@/lib/domain/issue-store";
+import { dbDialect } from "@/lib/db/client";
 
 export class RunError extends Error {
   constructor(message: string, public status = 409) { super(message); }
@@ -46,13 +47,25 @@ export async function startRun(db: Db, taskId: string): Promise<{ runId: string 
   const steps = getStepDefs(tpl.steps);
   const nowIso = new Date().toISOString();
   const runId = crypto.randomUUID();
-  db.transaction((tx) => {
-    tx.insert(flowRuns).values({ id: runId, taskId, templateId: tpl.id, templateVersion: tpl.version, status: "running", startedAt: nowIso }).run();
-    steps.forEach((s, i) => {
-      tx.insert(stepRuns).values({ id: crypto.randomUUID(), runId, stepIndex: i, stepName: s.name, executorType: s.type, status: "pending", attempt: 1, rejected: 0 }).run();
+  const stepRows = steps.map((s, i) => ({
+    id: crypto.randomUUID(), runId, stepIndex: i, stepName: s.name,
+    executorType: s.type, status: "pending" as const, attempt: 1, rejected: 0,
+  }));
+  if (dbDialect() === "mysql") {
+    // mysql 侧事务回调必须是 async(语句等待 execute);sqlite 侧保持同步回调(better-sqlite3 事务不能返回 promise)
+    const mydb = db as unknown as { transaction: (cb: (tx: Pick<Db, "insert" | "update">) => Promise<void>) => Promise<unknown> };
+    await mydb.transaction(async (tx) => {
+      await tx.insert(flowRuns).values({ id: runId, taskId, templateId: tpl.id, templateVersion: tpl.version, status: "running", startedAt: nowIso });
+      await tx.insert(stepRuns).values(stepRows);
+      await tx.update(tasks).set({ status: "running", updatedAt: nowIso }).where(eq(tasks.id, taskId));
     });
-    tx.update(tasks).set({ status: "running", updatedAt: nowIso }).where(eq(tasks.id, taskId)).run();
-  });
+  } else {
+    db.transaction((tx) => {
+      tx.insert(flowRuns).values({ id: runId, taskId, templateId: tpl.id, templateVersion: tpl.version, status: "running", startedAt: nowIso }).run();
+      for (const row of stepRows) tx.insert(stepRuns).values(row).run();
+      tx.update(tasks).set({ status: "running", updatedAt: nowIso }).where(eq(tasks.id, taskId)).run();
+    });
+  }
   return { runId };
 }
 
@@ -124,7 +137,8 @@ export async function runLlmStep(db: Db, runId: string, stepIndex: number, fetch
   if (run.status !== "running") throw new RunError("run 已结束或已取消", 409);
   const def = (await getStepDefsForRun(db, runId))[stepIndex];
   if (!def) throw new RunError("步骤定义不存在(模板可能已变更)", 409);
-  const task = db.select().from(tasks).where(eq(tasks.id, run.taskId)).all()[0] as typeof tasks.$inferSelect;
+  const task = db.select().from(tasks).where(eq(tasks.id, run.taskId)).all()[0] as typeof tasks.$inferSelect | undefined;
+  if (!task) throw new RunError("任务不存在(可能已被删除)", 409);
   const ex = resolveStepExecutor(db, def.executorRole ?? "executor");
   const nowIso = new Date().toISOString();
   if (!ex) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db/client";
+import { getAnyDb, dbDialect } from "@/lib/db/data-source";
 import { resolveSnapshotName, restoreSnapshotFile, createSnapshot } from "@/lib/domain/backup";
 
 export const runtime = "nodejs";
@@ -12,10 +12,14 @@ export async function POST(req: NextRequest) {
   if (!body || typeof body.name !== "string") {
     return NextResponse.json({ error: "缺少 name(快照文件名)" }, { status: 400 });
   }
+  if (dbDialect() === "mysql") {
+    return NextResponse.json({ error: "MySQL 模式不支持文件级恢复;请使用 JSON 导出/导入迁移数据" }, { status: 501 });
+  }
   try {
     const snapshotPath = resolveSnapshotName(body.name);
-    await createSnapshot(getDb(), undefined, "pre-restore");
-    restoreSnapshotFile(getDb(), snapshotPath);
+    const db = await getAnyDb();
+    await createSnapshot(db, undefined, "pre-restore");
+    restoreSnapshotFile(db, snapshotPath);
     return NextResponse.json({ ok: true, restart: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "恢复失败,原数据未受影响" }, { status: 400 });

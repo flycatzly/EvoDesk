@@ -13,30 +13,30 @@ let db: ReturnType<typeof createTestDb>;
 beforeEach(() => { db = createTestDb(); seedIfEmpty(db); });
 
 describe("exportData", () => {
-  it("覆盖 18 张表;默认剥离 api_key_ref;include_secrets 保留", () => {
+  it("覆盖 18 张表;默认剥离 api_key_ref;include_secrets 保留", async () => {
     const n = now();
     db.insert(providerProfiles).values({ id: "p1", name: "P", protocol: "anthropic", apiBase: "https://x", apiKeyRef: "plain:sk-secret", candidates: "[]", source: "manual", enabled: true, createdAt: n }).run();
     db.insert(executors).values({ id: "e1", name: "强模型", type: "llm", role: "planner", apiKeyRef: "plain:sk-abc", enabled: true, createdAt: n }).run();
 
-    const safe = exportData(db);
+    const safe = await exportData(db);
     expect(Object.keys(safe.tables).sort()).toEqual([...EXPORT_TABLES].sort());
     const prof = safe.tables.provider_profiles.find((r) => r.id === "p1") as Record<string, unknown>;
     expect(prof.api_key_ref).toBe("");
     const ex = safe.tables.executors.find((r) => r.id === "e1") as Record<string, unknown>;
     expect(ex.api_key_ref).toBe("");
 
-    const full = exportData(db, { includeSecrets: true });
+    const full = await exportData(db, { includeSecrets: true });
     expect(((full.tables.provider_profiles.find((r) => r.id === "p1")) as Record<string, unknown>).api_key_ref).toBe("plain:sk-secret");
   });
-  it("行数与库一致", () => {
-    const file = exportData(db);
+  it("行数与库一致", async () => {
+    const file = await exportData(db);
     expect(file.tables.tasks.length).toBe((db.select().from(tasks).all() as unknown[]).length);
   });
 });
 
 describe("parseBackup", () => {
-  it("合法文件通过;坏 JSON/version/缺 tables 抛错且消息含原因", () => {
-    const file = exportData(db);
+  it("合法文件通过;坏 JSON/version/缺 tables 抛错且消息含原因", async () => {
+    const file = await exportData(db);
     expect(parseBackup(JSON.stringify(file)).version).toBe(1);
     expect(() => parseBackup("not json")).toThrow(/JSON/);
     expect(() => parseBackup(JSON.stringify({ ...file, version: 2 }))).toThrow(/version/);
@@ -46,20 +46,20 @@ describe("parseBackup", () => {
 });
 
 describe("importData", () => {
-  it("全量替换:目标库行数等于备份;密钥为空的行不覆盖既有密钥以外的列", () => {
+  it("全量替换:目标库行数等于备份;密钥为空的行不覆盖既有密钥以外的列", async () => {
     db.insert(tasks).values({ id: "extra", title: "多出来的", status: "inbox", tags: "[]", complexity: "S", priority: 0, createdAt: now(), updatedAt: now() }).run();
-    const file = exportData(db); // 此刻 tasks 含 extra
+    const file = await exportData(db); // 此刻 tasks 含 extra
     // 清空任务表模拟另一个库
     const client = (db as unknown as { $client: { prepare: (sql: string) => { run: () => void } } }).$client;
     client.prepare("DELETE FROM tasks").run();
-    const stats = importData(db, file);
+    const stats = await importData(db, file);
     expect(stats.perTable.tasks).toBe(file.tables.tasks.length);
     expect((db.select().from(tasks).all() as unknown[]).length).toBe(file.tables.tasks.length);
   });
-  it("单事务:某表行坏(缺列类型错)整体回滚", () => {
-    const file = exportData(db);
+  it("单事务:某表行坏(缺列类型错)整体回滚", async () => {
+    const file = await exportData(db);
     (file.tables.tasks as unknown[]).push({ id: 12345, title: null }); // 非法行:id 非 text、title null 非法
-    expect(() => importData(db, file)).toThrow();
+    await expect(importData(db, file)).rejects.toThrow();
     // 回滚后数据仍在
     expect((db.select().from(tasks).all() as unknown[]).length).toBe(file.tables.tasks.length - 1);
   });

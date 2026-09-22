@@ -56,6 +56,9 @@ export async function getMysqlDbAsync(): Promise<MysqlDb> {
   if (fs.existsSync(migrationsFolder) && !migrated) {
     await migrate(db, { migrationsFolder });
     migrated = true;
+    // 迁移后补种(幂等,与 SQLite seedIfEmpty 同名单同策略;失败只警告不阻断)
+    const { seedMysqlIfEmpty } = await import("./seed-mysql");
+    await seedMysqlIfEmpty(db);
   }
   return db;
 }

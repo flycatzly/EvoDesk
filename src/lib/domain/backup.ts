@@ -1,11 +1,15 @@
-// 数据备份:JSON 全量导出/导入(默认剥离密钥)+ better-sqlite3 backup API 快照/恢复。
+// 数据备份:JSON 全量导出/导入(默认剥离密钥,双方言可用)+ better-sqlite3 backup API 快照/恢复(仅 SQLite)。
 // 安全边界:导入前强制校验(zod + 白名单表),恢复前强制快照,快照文件名只允许安全字符。
 import { z } from "zod";
 import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
+import type { Pool as MysqlPool } from "mysql2/promise";
 import type { Db } from "@/lib/db/test-util";
-import { openDb } from "@/lib/db/client";
+import { openDb, dbDialect } from "@/lib/db/client";
+
+/** MySQL 模式下不支持文件级快照/恢复时抛出;路由层映射为 501 */
+export class SnapshotUnsupportedError extends Error {}
 
 export const EXPORT_TABLES = [
   "tasks", "projects", "notes", "chats", "chat_messages", "links", "goals", "canvases",
@@ -32,11 +36,22 @@ export function backupDir(): string {
   return path.join(process.cwd(), "data", "backups");
 }
 
-export function exportData(db: Db, opts: { includeSecrets?: boolean } = {}): BackupFile {
-  const client = clientOf(db);
+const sqliteClientOf = (db: Db): RawClient => (db as unknown as { $client: RawClient }).$client;
+const mysqlPoolOf = (db: Db): MysqlPool => (db as unknown as { $client: MysqlPool }).$client;
+
+/** 原生 SELECT *(snake_case 列名,双方言同形,保证备份文件格式跨库一致) */
+async function rawSelectAll(db: Db, table: string): Promise<Record<string, unknown>[]> {
+  if (dbDialect() === "mysql") {
+    const [rows] = await mysqlPoolOf(db).query(`SELECT * FROM \`${table}\``);
+    return rows as Record<string, unknown>[];
+  }
+  return sqliteClientOf(db).prepare(`SELECT * FROM ${table}`).all() as Record<string, unknown>[];
+}
+
+export async function exportData(db: Db, opts: { includeSecrets?: boolean } = {}): Promise<BackupFile> {
   const tables: BackupFile["tables"] = {};
   for (const t of EXPORT_TABLES) {
-    const rows = client.prepare(`SELECT * FROM ${t}`).all() as Record<string, unknown>[];
+    const rows = await rawSelectAll(db, t);
     const secrets = opts.includeSecrets ? [] : (SECRET_COLS[t] ?? []);
     tables[t] = secrets.length === 0 ? rows : rows.map((r) => {
       const copy = { ...r };
@@ -74,7 +89,8 @@ export function parseBackup(raw: string): BackupFile {
 }
 
 /** 全量替换导入:单事务逐表 delete+insert(列取交集,行值做布尔→0/1 收敛);任一失败整体回滚 */
-export function importData(db: Db, file: BackupFile): { perTable: Record<string, number> } {
+export async function importData(db: Db, file: BackupFile): Promise<{ perTable: Record<string, number> }> {
+  if (dbDialect() === "mysql") return importDataMysql(db, file);
   const client = clientOf(db);
   const perTable: Record<string, number> = {};
   // drizzle 的 transaction 立即执行:回调内任一步抛错即整体回滚
@@ -102,8 +118,46 @@ export function importData(db: Db, file: BackupFile): { perTable: Record<string,
   return { perTable };
 }
 
-/** 快照:better-sqlite3 backup API 写 .db 文件;返回文件名。内存库同样可备份。 */
+/** MySQL 分支:专用连接 + 手动事务;SHOW COLUMNS 取列交集,? 占位批量插入 */
+async function importDataMysql(db: Db, file: BackupFile): Promise<{ perTable: Record<string, number> }> {
+  const pool = mysqlPoolOf(db);
+  const conn = await pool.getConnection();
+  const perTable: Record<string, number> = {};
+  try {
+    await conn.beginTransaction();
+    for (const t of EXPORT_TABLES) {
+      const rows = file.tables[t];
+      if (!rows) continue;
+      const [colRows] = await conn.query(`SHOW COLUMNS FROM \`${t}\``);
+      const cols = (colRows as { Field: string }[]).map((c) => c.Field);
+      await conn.query(`DELETE FROM \`${t}\``);
+      const usable = cols.filter((c) => rows.every((r) => !(c in r) || r[c] === undefined || typeof r[c] !== "object"));
+      if (usable.length === 0) { perTable[t] = rows.length; continue; }
+      const sql = `INSERT INTO \`${t}\` (${usable.map((c) => `\`${c}\``).join(",")}) VALUES (${usable.map(() => "?").join(",")})`;
+      for (const raw of rows) {
+        const values = usable.map((c) => {
+          const v = raw[c];
+          return typeof v === "boolean" ? (v ? 1 : 0) : (v ?? null);
+        });
+        await conn.query(sql, values);
+      }
+      perTable[t] = rows.length;
+    }
+    await conn.commit();
+    return { perTable };
+  } catch (err) {
+    try { await conn.rollback(); } catch { /* 连接已坏时回滚失败可忽略,原数据由事务保证 */ }
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+/** 快照:better-sqlite3 backup API 写 .db 文件;返回文件名。内存库同样可备份。MySQL 模式不支持(抛 SnapshotUnsupportedError)。 */
 export async function createSnapshot(db: Db, dir: string = backupDir(), prefix = "evodesk"): Promise<string> {
+  if (dbDialect() === "mysql") {
+    throw new SnapshotUnsupportedError("MySQL 模式不支持文件级快照;请使用 JSON 导出/导入备份数据");
+  }
   fs.mkdirSync(dir, { recursive: true });
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -117,8 +171,11 @@ export async function createSnapshot(db: Db, dir: string = backupDir(), prefix =
   return name;
 }
 
-/** 从快照恢复:关当前连接 → 覆盖库文件 → 重开并刷新单例;调用方需提示用户"数据已恢复" */
+/** 从快照恢复:关当前连接 → 覆盖库文件 → 重开并刷新单例;调用方需提示用户"数据已恢复"。MySQL 模式不支持。 */
 export function restoreSnapshotFile(db: Db, snapshotPath: string): void {
+  if (dbDialect() === "mysql") {
+    throw new SnapshotUnsupportedError("MySQL 模式不支持文件级恢复;请使用 JSON 导出/导入迁移数据");
+  }
   const client = clientOf(db);
   const target = client.name;
   if (target === ":memory:") throw new Error("内存数据库不支持文件恢复(测试环境请使用文件库)");

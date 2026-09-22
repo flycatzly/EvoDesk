@@ -41,6 +41,11 @@ function cacheDb(db: SqliteDb | null) {
 }
 
 export function getDb(): SqliteDb {
+  // MySQL 模式下 getDb 属于未适配调用点:与其静默读写本地 SQLite 造成双库数据分叉,
+  // 不如响亮报错引导走 getAnyDb()(方言网关)。SQLite 默认路径不受影响。
+  if (dbDialect() === "mysql") {
+    throw new Error("当前为 MySQL 数据源,此处应使用 getAnyDb() 方言网关(getDb 仅限 SQLite 路径)");
+  }
   const cached = currentDb();
   if (cached) return cached;
   const file = process.env.EVODESK_DB ?? path.join(process.cwd(), "data", "evodesk.db");
