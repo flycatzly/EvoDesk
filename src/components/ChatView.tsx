@@ -28,6 +28,10 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // 转语音:正在合成/播放的消息 id(再点一次停止)
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [ttsBusyId, setTtsBusyId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const activeChat = chats.find((c) => c.id === activeId) ?? null;
   // 会话模式以当前会话自身的 mode 为准(教练并入对话台:同一页面承载 chat/coach 两种会话)
@@ -83,6 +87,39 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
     } finally {
       setStreaming(false);
       router.refresh();
+    }
+  };
+
+  // —— 转语音(Audio8_TTS 本地服务;见设置页「语音合成」)——
+  const speakMsg = async (m: Msg) => {
+    if (ttsBusyId) return;
+    if (speakingId === m.id) {
+      audioRef.current?.pause();
+      setSpeakingId(null);
+      return;
+    }
+    setTtsBusyId(m.id);
+    setError(null);
+    try {
+      const res = await fetch("/api/tts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: m.content }) });
+      if (!res.ok) {
+        const d = await res.json().catch(() => null) as { error?: string } | null;
+        setError(d?.error ?? "语音合成失败");
+        setTtsBusyId(null);
+        return;
+      }
+      const blob = await res.blob();
+      audioRef.current?.pause();
+      const audio = new Audio(URL.createObjectURL(blob));
+      audioRef.current = audio;
+      audio.onended = () => setSpeakingId(null);
+      setTtsBusyId(null);
+      setSpeakingId(m.id);
+      await audio.play();
+    } catch {
+      setError("语音播放失败");
+      setTtsBusyId(null);
+      setSpeakingId(null);
     }
   };
 
@@ -417,6 +454,11 @@ ${m.content}`;
                     <button onClick={(e) => { if (selectMode) { e.stopPropagation(); toggleSelected(m.id); } else void copyText(m.content, m.id); }} className="underline" style={{ color: "var(--accent)" }}>
                       {copiedId === m.id ? "✓ 已复制" : "复制"}
                     </button>
+                    {m.content && !selectMode && (
+                      <button onClick={(e) => { e.stopPropagation(); void speakMsg(m); }} className="underline" style={{ color: "var(--accent)" }} title="把这条回复转成语音播放">
+                        {ttsBusyId === m.id ? "⏳ 合成中…" : speakingId === m.id ? "⏹ 停止" : "🔊 转语音"}
+                      </button>
+                    )}
                     <button onClick={(e) => { e.stopPropagation(); toTask(m.content); }} className="underline" style={{ color: "var(--accent)" }}>转为任务</button>
                   </div>
                 )}

@@ -6,6 +6,7 @@ import { BackupForm } from "@/components/BackupForm";
 import { NotifySettings } from "@/components/NotifySettings";
 import { InboundSettings } from "@/components/InboundSettings";
 import { MySqlMigrateCard } from "@/components/MySqlMigrateCard";
+import { TtsSettings } from "@/components/TtsSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,9 @@ export default function SettingsPage() {
       </div>
       <div className="mt-4">
         <InboundSettings />
+      </div>
+      <div className="mt-4">
+        <TtsSettings />
       </div>
       <div className="mt-4">
         <MySqlMigrateCard />
