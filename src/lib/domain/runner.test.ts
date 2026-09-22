@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createTestDb } from "@/lib/db/test-util";
 import { seedIfEmpty } from "@/lib/db/seed";
-import { startRun, getCurrentStep, syncRunStatus, RunError, runLlmStep, retryStep, manualOverrideStep, skipStep, approveCheckpoint, rejectCheckpoint, getSteps } from "./runner";
+import { startRun, getCurrentStep, syncRunStatus, RunError, runLlmStep, retryStep, manualOverrideStep, skipStep, approveCheckpoint, rejectCheckpoint } from "./runner";
 import { tasks, flowRuns, stepRuns, flowTemplates, executors } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 

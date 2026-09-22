@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getAnyDb } from "@/lib/db/data-source";
-import { q } from "@/lib/db/q";
 import { links } from "@/lib/db/schema";
 
 export const runtime = "nodejs";

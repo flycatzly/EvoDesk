@@ -84,8 +84,6 @@ export async function POST(req: NextRequest) {
         try { await q.run(mysql.delete(mTable)); } catch { /* 空表删除报错可忽略 */ }
       }
 
-      // 列交集:MySQL schema 的列(以 mysql 表对象键为准,转 snake_case 列名)
-      const mysqlCols = Object.keys(mTable);
       // sqlite 行的列名是 snake_case;mysql schema 对象键是 camelCase
       // 映射:遍历 mysql schema 列定义取列名
       const colDefs = getTableColumns(mTable) as Record<string, { name: string }>;

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq, asc } from "drizzle-orm";
 import fs from "node:fs";
 import { getAnyDb } from "@/lib/db/data-source";
-import { q } from "@/lib/db/q";
 import { chats, chatMessages } from "@/lib/db/schema";
 
 export const runtime = "nodejs";

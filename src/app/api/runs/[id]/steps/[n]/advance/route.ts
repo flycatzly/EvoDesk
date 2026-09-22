@@ -112,8 +112,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 function readWhitelist(db: Db): string[] {
-  // 调用点 db 已在白名单内(运行时 drizzle 实例);此处 cast 避免 union 类型展开
-  const d = db as unknown as { select: (t: unknown) => { where: (w: unknown) => { all: () => { value: string }[] } } };
   const row = (db.select().from(settings).where(eq(settings.key, "whitelist_dirs")) as unknown as { all: () => { value: string }[] }).all()[0];
   if (!row) return DEFAULT_WHITELIST;
   try { const v = JSON.parse(row.value); return Array.isArray(v) ? v : DEFAULT_WHITELIST; } catch { return DEFAULT_WHITELIST; }

@@ -91,7 +91,6 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "apply") {
-    const dryRun = body?.dry_run === true;
     const planRaw = body?.plan;
     if (!planRaw || typeof planRaw !== "object") return NextResponse.json({ error: "plan 必填" }, { status: 400 });
     const index = indexLibrary(root, { maxEntries: 500, maxDepth: 6 });

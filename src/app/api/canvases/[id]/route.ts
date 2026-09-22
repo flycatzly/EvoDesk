@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getAnyDb } from "@/lib/db/data-source";
-import { q } from "@/lib/db/q";
 import { canvases } from "@/lib/db/schema";
 import { layoutSchema } from "@/lib/domain/canvas";
 
