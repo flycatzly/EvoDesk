@@ -411,6 +411,31 @@ def cmd_setup_chrome(args) -> None:
     sys.exit("! 等待登录超时(10 分钟):请在专用浏览器窗口完成登录后,点「连通自检」确认,无需重跑 setup")
 
 
+def launch_browser_if_down(chrome_path: str = None) -> bool:
+    """CDP 未就绪时自动拉起隔离浏览器并等端口就绪(60s);不等待登录。
+
+    登录态持久在隔离 profile 里,只要历史上完成过一次扫码登录,
+    scrape/smoke 即可自愈恢复,无需每次人工 setup。就绪返回 True。
+    """
+    if cdp_ok():
+        return True
+    chrome = chrome_path or find_chrome()
+    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    import subprocess
+    log(f"CDP 未就绪,自动拉起浏览器:{chrome}(隔离 profile,不等待登录)")
+    subprocess.Popen(
+        [chrome, f"--remote-debugging-port={CDP_PORT}", f"--user-data-dir={PROFILE_DIR}",
+         "--no-first-run", "--no-default-browser-check", HOME_URL],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(60):
+        time.sleep(1)
+        if cdp_ok():
+            log(f"CDP 端口已就绪({CDP_PORT})")
+            return True
+    warn("! CDP 端口 60 秒未就绪:若浏览器已打开请关闭其全部窗口后重试;或用 --chrome 指定浏览器路径")
+    return False
+
+
 def cmd_check() -> None:
     ok = True
     if cdp_ok():
@@ -449,8 +474,8 @@ def cmd_check() -> None:
 
 
 def cmd_smoke_test(args) -> None:
-    if not cdp_ok():
-        sys.exit("! Chrome CDP 不可用:先执行 --setup-chrome")
+    if not launch_browser_if_down(args.chrome):
+        sys.exit("! Chrome CDP 不可用:自动拉起失败,请先执行 --setup-chrome 完成登录初始化")
     ws, _ = open_zhipin_tab()
     try:
         raw = ws.evaluate(SEARCH_JS.replace("__KW__", args.keyword).replace("__CITY__", resolve_city(args.city)).replace("__PAGE__", "1"), timeout=20)
@@ -463,8 +488,8 @@ def cmd_smoke_test(args) -> None:
 
 
 def cmd_scrape(args) -> None:
-    if not cdp_ok():
-        sys.exit("! Chrome CDP 不可用:先执行 --setup-chrome")
+    if not launch_browser_if_down(args.chrome):
+        sys.exit("! Chrome CDP 不可用:自动拉起失败,请先执行 --setup-chrome 完成登录初始化")
     pages = min(args.pages, MAX_PAGES)
     city_code = resolve_city(args.city)
     ws, _ = open_zhipin_tab()

@@ -232,3 +232,36 @@ html[data-tv] main .grid { gap: 1.5rem !important; }
 /* 隐藏大屏下无意义的交互控件(编辑按钮/取消勾选等仍安全:tv 模式本就只读浏览) */
 html[data-tv] main button { pointer-events: none; opacity: 0.75; }
 html[data-tv] main a { pointer-events: auto; }
+
+/* —— 对话台(ZCode 风格):气泡 / 头像 / 流式光标 / 细滚动条 —— */
+.chat-scroll { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.chat-scroll::-webkit-scrollbar { width: 6px; }
+.chat-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.chat-user-bubble {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  border-radius: 18px 18px 4px 18px;
+  word-break: break-word;
+}
+.chat-ai-bubble {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 18px 18px 18px 4px;
+  word-break: break-word;
+}
+.chat-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; flex: none;
+  user-select: none;
+}
+.chat-cursor {
+  display: inline-block; width: 8px; height: 15px; margin-left: 2px;
+  vertical-align: -2px; background: var(--accent);
+  animation: chat-blink 1s steps(2) infinite;
+}
+@keyframes chat-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-cursor { animation: none; }
+}

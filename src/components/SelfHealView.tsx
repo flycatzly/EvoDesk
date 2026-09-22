@@ -54,7 +54,7 @@ export function SelfHealView() {
     setError(null);
     setNotice(null);
     try {
-      const res = await fetch("/api/self-heal", { method: "POST", body: JSON.stringify({ action, ...(id ? { id } : {}) }) });
+      const res = await fetch("/api/self-heal", { method: "POST", body: JSON.stringify({ action, ...(id ? { id } : {}), force: action === "fix" && !!id }) });
       const data = await res.json();
       if (!res.ok && !data.results) {
         setError(errorOf(data, "操作失败"));
@@ -151,7 +151,9 @@ export function SelfHealView() {
               )}
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {i.status === "open" && i.fixKind !== "none" && i.fixKind !== "needs_human" && (
-                  <button className="accent-btn text-xs px-2 py-1" onClick={() => void act("fix", i.id)} disabled={!!busy}>⚡ 自动修复</button>
+                  <button className="accent-btn text-xs px-2 py-1" onClick={() => void act("fix", i.id)} disabled={!!busy}>
+                    {i.fixAttempts >= 2 ? "🔧 手动修复(不受自动上限限制)" : "⚡ 自动修复"}
+                  </button>
                 )}
                 <button className="ghost-btn text-xs px-2 py-1" onClick={() => void act("analyze", i.id)} disabled={busy === "analyze" + i.id}>
                   {busy === "analyze" + i.id ? "分析中…" : "🤖 AI 分析"}

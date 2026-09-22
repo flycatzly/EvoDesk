@@ -92,8 +92,8 @@ export async function aiAnalyzeIssue(db: Db, issueId: string, executorId?: strin
 
 export type FixOutcome = { ok: boolean; result: string };
 
-/** 自动修复(有界:同类修复最多 MAX_AUTO_FIX_ATTEMPTS 次)。 */
-export async function applyFix(db: Db, issueId: string): Promise<FixOutcome> {
+/** 自动修复(有界:同类修复最多 MAX_AUTO_FIX_ATTEMPTS 次)。force=人工显式触发,不受自动上限约束。 */
+export async function applyFix(db: Db, issueId: string, opts: { force?: boolean } = {}): Promise<FixOutcome> {
   const issue = db.select().from(issues).all().find((i) => i.id === issueId);
   if (!issue) return { ok: false, result: "issue 不存在" };
   if (issue.status === "fixed") return { ok: false, result: "已修复" };
@@ -101,6 +101,9 @@ export async function applyFix(db: Db, issueId: string): Promise<FixOutcome> {
   const fixKind: FixKind = issue.fixKind as FixKind;
   const bump = (fixStatus: string, result: string) =>
     db.update(issues).set({ fixAttempts: issue.fixAttempts + 1, fixStatus, fixResult: result.slice(0, 500), updatedAt: new Date().toISOString() }).where(eq(issues.id, issueId)).run();
+  // 拒绝执行(未真正尝试修复)不计入 attempts,避免到达上限后的反复点击虚增计数
+  const reject = (fixStatus: string, result: string) =>
+    db.update(issues).set({ fixStatus, fixResult: result.slice(0, 500), updatedAt: new Date().toISOString() }).where(eq(issues.id, issueId)).run();
   // 修复失败转人工 → IM 通知(尽力而为,失败静默)
   const notifyFail = (result: string) => {
     void sendNotify(db, {
@@ -113,11 +116,11 @@ ${result}
   };
 
   if (fixKind === "needs_human" || fixKind === "none") {
-    bump("needs_human", "该问题需要人工处理,系统不做自动动作");
+    reject("needs_human", "该问题需要人工处理,系统不做自动动作");
     return { ok: false, result: "需要人工处理" };
   }
-  if (issue.fixAttempts >= MAX_AUTO_FIX_ATTEMPTS) {
-    bump("failed", `已达自动修复上限(${MAX_AUTO_FIX_ATTEMPTS} 次),转人工`);
+  if (!opts.force && issue.fixAttempts >= MAX_AUTO_FIX_ATTEMPTS) {
+    reject("failed", `已达自动修复上限(${MAX_AUTO_FIX_ATTEMPTS} 次),转人工;可在页面点「手动修复」强制执行`);
     notifyFail("已达自动修复上限");
     return { ok: false, result: "已达自动修复上限" };
   }
@@ -168,7 +171,9 @@ ${result}
       bump("failed", `无法自动重启:${out.error}`);
       return { ok: false, result: out.error };
     }
-    bump("pending", `已自动重启 ${kind} 运行(结果见求职雷达页)`);
+    bump("pending", kind === "setup"
+      ? "已重启浏览器初始化:请在弹出的专用浏览器窗口扫码登录 zhipin.com(10 分钟内),完成后无需重跑 setup 直接重跑抓取"
+      : `已自动重启 ${kind} 运行(结果见求职雷达页)`);
     return { ok: true, result: "已自动重启运行" };
   }
 

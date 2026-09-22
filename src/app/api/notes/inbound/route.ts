@@ -87,16 +87,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "保存校验失败(内容不完整),请重试" }, { status: 500 });
   }
 
-  // 可选 git 同步:只 add 本文件 → commit → push;失败不影响保存结果(返回 warning)
+  // 可选 git 同步:只 add 本文件 → commit → push;失败不影响保存结果(返回 warning)。
+  // 库还不是 git 仓库时自动 git init(用户开启了 push 即表达了同步意图),无远程时只本地提交。
   let gitNote: string | null = null;
   if (kv.inbound_git_push === true) {
     try {
       const opts = { cwd: target.root, timeout: 30_000 };
+      const inside = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], opts)
+        .then((r) => String(r.stdout).trim() === "true")
+        .catch(() => false);
+      if (!inside) {
+        await execFileAsync("git", ["init"], opts);
+        gitNote = "库未初始化 git,已自动执行 git init;";
+      }
       await execFileAsync("git", ["add", path.join(target.rel, fileName)], opts);
       await execFileAsync("git", ["commit", "-m", `随记 ${now.toISOString().slice(0, 16)} ${title}`], opts);
-      await execFileAsync("git", ["pull", "--rebase"], opts);
-      await execFileAsync("git", ["push"], opts);
-      gitNote = "已提交并推送";
+      const hasRemote = await execFileAsync("git", ["remote"], opts)
+        .then((r) => String(r.stdout).trim().length > 0)
+        .catch(() => false);
+      if (hasRemote) {
+        await execFileAsync("git", ["pull", "--rebase"], opts);
+        await execFileAsync("git", ["push"], opts);
+        gitNote = (gitNote ?? "") + "已提交并推送";
+      } else {
+        gitNote = (gitNote ?? "") + "已本地提交(库未配置远程仓库,跳过推送)";
+      }
     } catch (e) {
       gitNote = `已保存,同步失败:${e instanceof Error ? e.message.slice(0, 100) : "git 异常"}`;
     }

@@ -32,8 +32,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "fix") {
+    // force=人工点按钮显式触发,不受自动修复上限约束
+    const force = body?.force === true;
     if (typeof body?.id === "string") {
-      const out = await applyFix(db, body.id);
+      const out = await applyFix(db, body.id, { force });
       return NextResponse.json(out, { status: out.ok ? 200 : 409 });
     }
     // 一键修复全部 pending 且可自动修复的(有界)
@@ -41,7 +43,7 @@ export async function POST(req: NextRequest) {
     const targets = rows.filter((r) => r.status === "open" && ["retry_step", "rerun_setup", "retry_job"].includes(r.fixKind) && r.fixStatus !== "applied").slice(0, 10);
     const results: { id: string; ok: boolean; result: string }[] = [];
     for (const t of targets) {
-      const out = await applyFix(db, t.id);
+      const out = await applyFix(db, t.id, { force });
       results.push({ id: t.id, ok: out.ok, result: out.result });
     }
     const okCount = results.filter((r) => r.ok).length;

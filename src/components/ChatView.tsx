@@ -160,23 +160,29 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
     }
   };
 
+  // —— 渲染:ZCode 风格对话台 ——
+  // 结构:顶栏(会话/模型) → 可选会话管理/教练横幅 → 全高消息流 → 底部停靠输入区。
+  const sendDisabled = streaming || !input.trim() || !activeId || !hasAnyModel;
+  const suggestionChips = ["介绍一下你能帮我做什么", "帮我规划今天的任务", "把这段话整理成笔记:…"];
+
   return (
-    <div>
-      <div className="flex gap-2 mb-3 flex-wrap items-center">
-        <select className="input px-2 py-1.5 text-sm max-w-56" value={activeId ?? ""} onChange={(e) => router.push(`${basePath}?c=${e.target.value}`)}>
+    <div className="flex flex-col" style={{ height: "calc(100vh - 170px)", minHeight: 500 }}>
+      {/* 顶栏 */}
+      <div className="flex gap-2 flex-wrap items-center pb-2.5 mb-3" style={{ borderBottom: "1px solid var(--border)" }}>
+        <select className="input px-2 py-1.5 text-sm max-w-52" value={activeId ?? ""} onChange={(e) => router.push(`${basePath}?c=${e.target.value}`)}>
           {chats.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
         </select>
-        <button onClick={() => void createChat("chat")} className="ghost-btn px-2 py-1.5 text-sm">+ 新对话</button>
-        <button onClick={() => void createChat("coach")} className="ghost-btn px-2 py-1.5 text-sm" title="教练式逐轮提问,产出可复制的搭建提示词">🏃 教练对话</button>
+        <button onClick={() => void createChat("chat")} className="ghost-btn px-2 py-1.5 text-sm" title="开始新对话">＋ 新对话</button>
+        <button onClick={() => void createChat("coach")} className="ghost-btn px-2 py-1.5 text-sm" title="教练式逐轮提问,产出可复制的搭建提示词">🏃 教练</button>
         <button onClick={() => setMgrOpen((v) => !v)} className="ghost-btn px-2 py-1.5 text-sm" title="重命名 / 工作目录 / 删除">
-          会话管理
+          会话管理{mgrOpen ? " ▴" : " ▾"}
         </button>
         {activeChat?.workdir && (
-          <span className="text-xs px-2 py-1 rounded truncate max-w-64" style={{ background: "var(--surface-2)", color: "var(--muted)" }} title={activeChat.workdir}>
+          <span className="text-xs px-2 py-1 rounded truncate max-w-56" style={{ background: "var(--surface-2)", color: "var(--muted)" }} title={activeChat.workdir}>
             📂 {activeChat.workdir}
           </span>
         )}
-        <select className="input px-2 py-1.5 text-sm ml-auto" value={executorId} onChange={(e) => setExecutorId(e.target.value)} disabled={!hasAnyModel}>
+        <select className="input px-2 py-1.5 text-sm ml-auto max-w-56" value={executorId} onChange={(e) => setExecutorId(e.target.value)} disabled={!hasAnyModel} title="本次对话使用的模型执行器">
           {!hasAnyModel && <option value="">未配置模型</option>}
           {groups.map((g) => (
             <optgroup key={g} label={g}>
@@ -186,9 +192,9 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
         </select>
       </div>
       {mgrOpen && (
-        <div className="surface p-3 mb-3 space-y-2">
+        <div className="surface p-3 mb-3 space-y-2 max-h-72 overflow-auto chat-scroll" style={{ flex: "none" }}>
           <div className="text-sm font-medium mb-1">会话管理(共 {chats.length} 个)</div>
-          {chats.length === 0 && <div className="text-xs" style={{ color: "var(--muted)" }}>暂无会话,点「+ 新对话」创建。</div>}
+          {chats.length === 0 && <div className="text-xs" style={{ color: "var(--muted)" }}>暂无会话,点「＋ 新对话」创建。</div>}
           {chats.map((c) => {
             const draft = renaming[c.id];
             const dirDraft = dirEditing[c.id];
@@ -267,8 +273,8 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
         </div>
       )}
       {effectiveMode === "coach" && (
-        <div className="surface p-2.5 mb-3 flex items-center gap-2 text-xs flex-wrap">
-          <span style={{ color: "var(--accent)" }}>🏃 需求教练</span>
+        <div className="p-2.5 mb-3 flex items-center gap-2 text-xs flex-wrap rounded" style={{ flex: "none", background: "var(--surface-2)", borderLeft: "3px solid var(--accent-2)" }}>
+          <span style={{ color: "var(--accent-2)" }}>🏃 需求教练</span>
           <span style={{ color: "var(--muted)" }}>教练逐轮提问(最多 6 轮),信息足够后输出「最终搭建提示词」。</span>
           <span className="ml-auto" style={{ color: "var(--muted)" }}>已进行 {rounds} 轮</span>
           {finalReady && (
@@ -279,38 +285,92 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
           )}
         </div>
       )}
-      <div className="surface p-4 mb-3 space-y-3 min-h-60 max-h-[60vh] overflow-auto">
+
+      {/* 消息流 */}
+      <div className="chat-scroll flex-1 overflow-auto px-1 space-y-4 min-h-0">
         {!hasAnyModel && (
           <div className="text-sm" style={{ color: "var(--muted)" }}>
             尚未配置可用模型。到「执行器」页导入供应商档案并启用,或在设置环境变量后启用种子执行器。
           </div>
         )}
-        {messages.map((m) => (
-          <div key={m.id} className={m.role === "user" ? "text-right" : ""}>
-            <div className={`inline-block text-sm whitespace-pre-wrap px-3 py-2 rounded-xl max-w-[85%] text-left ${m.role === "user" ? "accent-btn" : "surface"}`}
-              style={m.role === "user" ? {} : { background: "var(--surface-2)" }}>
-              {m.content}
+        {hasAnyModel && messages.length === 0 && (
+          <div className="h-full flex flex-col items-center justify-center gap-3 text-center select-none">
+            <div className="chat-avatar" style={{ width: 44, height: 44, fontSize: 20, background: "linear-gradient(135deg, var(--accent), var(--accent-2))", color: "#fff" }}>AI</div>
+            <div className="text-sm" style={{ color: "var(--muted)" }}>开始你的第一句话</div>
+            <div className="flex gap-2 flex-wrap justify-center">
+              {suggestionChips.map((chip) => (
+                <button key={chip} className="ghost-btn text-xs px-3 py-1.5 rounded-full" onClick={() => setInput(chip)}>{chip}</button>
+              ))}
             </div>
-            {m.role === "assistant" && (m.model || m.costUsd > 0) && (
-              <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>{m.model} · ${m.costUsd.toFixed(6)}
-                <button onClick={() => toTask(m.content)} className="ml-2 underline" style={{ color: "var(--accent)" }}>转为任务</button>
-              </div>
-            )}
           </div>
-        ))}
+        )}
+        {messages.map((m, idx) => {
+          const isLast = idx === messages.length - 1;
+          if (m.role === "user") {
+            return (
+              <div key={m.id} className="flex justify-end items-end gap-2">
+                <div className="chat-user-bubble inline-block text-sm whitespace-pre-wrap px-3.5 py-2.5 max-w-[80%] text-left leading-relaxed">{m.content}</div>
+                <div className="chat-avatar" style={{ background: "var(--surface-2)", color: "var(--muted)", border: "1px solid var(--border)" }}>你</div>
+              </div>
+            );
+          }
+          const showCursor = streaming && isLast;
+          return (
+            <div key={m.id} className="flex items-start gap-2">
+              <div className="chat-avatar" style={{ background: "linear-gradient(135deg, var(--accent), var(--accent-2))", color: "#fff" }}>AI</div>
+              <div className="max-w-[85%] min-w-0">
+                <div className="chat-ai-bubble inline-block text-sm whitespace-pre-wrap px-3.5 py-2.5 leading-relaxed">
+                  {m.content}{showCursor && <span className="chat-cursor" />}
+                </div>
+                {(m.model || m.costUsd > 0) && (
+                  <div className="text-xs mt-1 flex items-center gap-2" style={{ color: "var(--muted)" }}>
+                    <span className="font-mono">{m.model}{m.costUsd > 0 ? ` · $${m.costUsd.toFixed(6)}` : ""}</span>
+                    <button onClick={() => toTask(m.content)} className="underline" style={{ color: "var(--accent)" }}>转为任务</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
-      {error && <div className="text-xs mb-2" style={{ color: "var(--danger)" }}>{error}</div>}
-      <div className="flex gap-2">
-        <input
-          className="input flex-1 px-3 py-2 text-sm"
-          placeholder={hasAnyModel ? "输入消息,Enter 发送…" : "请先配置模型"}
-          value={input}
-          disabled={!activeId || !hasAnyModel}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) send(); }}
-        />
-        <button onClick={send} disabled={streaming || !input.trim()} className="accent-btn px-4 py-2 text-sm">{streaming ? "…" : "发送"}</button>
+
+      {error && <div className="text-xs mt-2" style={{ color: "var(--danger)" }}>{error}</div>}
+
+      {/* 底部停靠输入区 */}
+      <div className="pt-2.5 mt-1" style={{ flex: "none", borderTop: "1px solid var(--border)" }}>
+        <div className="rounded-2xl px-3 py-2 flex items-end gap-2" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+          <textarea
+            className="flex-1 bg-transparent text-sm resize-none outline-none leading-relaxed py-1.5"
+            style={{ color: "var(--text)", minHeight: 24, maxHeight: 160, border: "none" }}
+            placeholder={hasAnyModel ? "输入消息,Enter 发送,Shift+Enter 换行…" : "请先配置模型(到「执行器」页启用)"}
+            rows={1}
+            value={input}
+            disabled={!activeId || !hasAnyModel}
+            onChange={(e) => {
+              setInput(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                if (!sendDisabled) send();
+              }
+            }}
+          />
+          <button
+            onClick={send}
+            disabled={sendDisabled}
+            className="accent-btn px-3.5 py-2 text-sm rounded-xl"
+            style={{ flex: "none" }}
+            title="发送 (Enter)"
+          >{streaming ? "⏳" : "➤"}</button>
+        </div>
+        <div className="text-xs mt-1.5 flex justify-between gap-2" style={{ color: "var(--muted)" }}>
+          <span>Enter 发送 · Shift+Enter 换行 · 流式回复中可继续输入</span>
+          {activeChat && <span className="truncate max-w-64" title={activeChat.title}>{activeChat.title}</span>}
+        </div>
       </div>
     </div>
   );
