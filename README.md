@@ -31,11 +31,15 @@ npm run dev
 
 ```bash
 npm run build
-npm start
+npm start          # 默认 3000;已占用时用 PORT=3001 npm start
 ```
 
-> 注意:同一时间只运行一个实例(`dev` 或 `start`),两者同时运行会争用 `.next` 目录导致构建/启动失败。
-> 生产数据库备份:设置页「创建快照」,或直接复制 `data/` 目录。
+**一键双实例(推荐,Windows):** 双击运行 `scripts\start-evodesk.cmd` —— 自动按需构建,并分别拉起
+dev(3000) 与生产(3001) 两个独立窗口,与 ZCode 等会话工具无关,关闭窗口即停止对应实例。
+日常开发中 `npm run dev` 与 `PORT=3001 npm start` 同时运行没有问题;只有 **build 时**需要先停掉两个实例
+(`.next` 目录会被运行中的实例锁定,构建报 EPERM 即此原因)。
+
+> 生产数据库备份:设置页「创建快照」(SQLite 模式),或直接复制 `data/` 目录。
 
 ---
 
