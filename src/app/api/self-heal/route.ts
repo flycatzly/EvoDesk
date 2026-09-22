@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getAnyDb } from "@/lib/db/data-source";
 import { issues } from "@/lib/db/schema";
-import { collectIssues, applyFix, listIssues, aiAnalyzeIssue } from "@/lib/domain/self-heal";
+import { collectIssues, applyFix, listIssues, aiAnalyzeIssue, deleteIssues } from "@/lib/domain/self-heal";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,5 +74,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  return NextResponse.json({ error: "未知 action(scan|fix|analyze|ignore)" }, { status: 400 });
+  if (action === "delete") {
+    const ids = Array.isArray(body?.ids) ? body.ids.filter((x): x is string => typeof x === "string") : [];
+    if (ids.length === 0) return NextResponse.json({ error: "ids 必填(非空字符串数组)" }, { status: 400 });
+    const deleted = await deleteIssues(db, ids);
+    return NextResponse.json({ ok: true, deleted });
+  }
+
+  return NextResponse.json({ error: "未知 action(scan|fix|analyze|ignore|delete)" }, { status: 400 });
 }

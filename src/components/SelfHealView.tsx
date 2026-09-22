@@ -30,6 +30,16 @@ export function SelfHealView() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // 多选清理:勾选记录批量删除(留痕数据不自动删,仅显式删除)
+  const [selMode, setSelMode] = useState(false);
+  const [selIds, setSelIds] = useState<Set<string>>(new Set());
+  const toggleSel = (id: string) =>
+    setSelIds((cur) => {
+      const n = new Set(cur);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  const exitSel = () => { setSelMode(false); setSelIds(new Set()); };
 
   const load = useCallback(async () => {
     try {
@@ -48,13 +58,14 @@ export function SelfHealView() {
     return () => cancelAnimationFrame(raf);
   }, [load]);
 
-  const act = useCallback(async (action: string, id?: string) => {
+  const act = useCallback(async (action: string, id?: string, force = false) => {
     if (busy) return;
     setBusy(action + (id ?? ""));
     setError(null);
     setNotice(null);
     try {
-      const res = await fetch("/api/self-heal", { method: "POST", body: JSON.stringify({ action, ...(id ? { id } : {}), force: action === "fix" && !!id }) });
+      // force 仅人工点按钮时传:绕过自动修复上限;页面加载的自动修复轮与一键修复保持有界
+      const res = await fetch("/api/self-heal", { method: "POST", body: JSON.stringify({ action, ...(id ? { id } : {}), force: action === "fix" && !!id && force }) });
       const data = await res.json();
       if (!res.ok && !data.results) {
         // fix 未成功的响应体是 {ok:false, result};其余是 {error}。都要给用户可见反馈
@@ -73,6 +84,25 @@ export function SelfHealView() {
       setBusy(null);
     }
   }, [busy, load]);
+
+  const deleteSelected = useCallback(async () => {
+    if (selIds.size === 0) return;
+    setBusy("delete");
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/self-heal", { method: "POST", body: JSON.stringify({ action: "delete", ids: [...selIds] }) });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? "删除失败"); return; }
+      setNotice(`已删除 ${data.deleted} 条记录`);
+      exitSel();
+      await load();
+    } catch {
+      setError("请求失败,请重试");
+    } finally {
+      setBusy(null);
+    }
+  }, [selIds, load]);
 
   // 自动修复:页面加载后对"重试任务步骤"类自动执行一轮(ref 防重入,单轮最多 3 个);
   // rerun_setup/retry_job 会拉起真实浏览器进程,仅保留手动「一键修复」触发
@@ -111,8 +141,25 @@ export function SelfHealView() {
           <button className="accent-btn text-xs px-3 py-1.5" onClick={() => void act("scan")} disabled={busy === "scan"}>扫描失败记录</button>
           <button className="ghost-btn text-xs px-3 py-1.5" onClick={() => void act("analyze")} disabled={busy === "analyze"}>🤖 AI 分析未处理的</button>
           <button className="accent-btn text-xs px-3 py-1.5" onClick={() => void act("fix")} disabled={busy === "fix"}>⚡ 一键修复可修复项</button>
+          <button
+            className={`ghost-btn text-xs px-3 py-1.5 ${selMode ? "ring-1" : ""}`}
+            style={selMode ? { color: "var(--accent)" } : undefined}
+            onClick={() => (selMode ? exitSel() : setSelMode(true))}
+          >☑ 多选清理</button>
           {loading && <span className="text-xs" style={{ color: "var(--muted)" }}>加载中…</span>}
         </div>
+        {selMode && (
+          <div className="flex flex-wrap gap-2 items-center mt-2 p-2 rounded" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+            <span className="text-xs" style={{ color: "var(--muted)" }}>已选 {selIds.size} 条</span>
+            <button className="ghost-btn text-xs px-2 py-1" onClick={() => setSelIds(selIds.size === issues.length ? new Set() : new Set(issues.map((x) => x.id)))}>
+              {issues.length > 0 && selIds.size === issues.length ? "清空" : "全选"}
+            </button>
+            <button className="accent-btn text-xs px-2 py-1" disabled={selIds.size === 0 || busy === "delete"} style={selIds.size === 0 ? { opacity: 0.5 } : undefined} onClick={() => void deleteSelected()}>
+              {busy === "delete" ? "删除中…" : "🗑 删除所选"}
+            </button>
+            <button className="ghost-btn text-xs px-2 py-1 ml-auto" onClick={exitSel}>取消(Esc)</button>
+          </div>
+        )}
         {error && <div className="text-xs mt-2" style={{ color: "var(--danger)" }}>{error}</div>}
         {notice && <div className="text-xs mt-2" style={{ color: "var(--accent)" }}>{notice}</div>}
       </div>
@@ -124,8 +171,21 @@ export function SelfHealView() {
       ) : (
         <div className="space-y-2">
           {issues.map((i) => (
-            <div key={i.id} className="surface p-3">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
+            <div key={i.id} className="surface p-3" style={selMode && selIds.has(i.id) ? { outline: "1px solid var(--accent)" } : undefined}>
+              <div
+                className={`flex flex-wrap items-center gap-2 text-sm ${selMode ? "cursor-pointer" : ""}`}
+                onClick={selMode ? () => toggleSel(i.id) : undefined}
+              >
+                {selMode && (
+                  <span
+                    className="inline-flex items-center justify-center rounded shrink-0"
+                    style={{
+                      width: 16, height: 16, border: "1px solid var(--border)",
+                      background: selIds.has(i.id) ? "var(--accent)" : "var(--surface-2)",
+                      color: "#fff", fontSize: 11, lineHeight: 1,
+                    }}
+                  >{selIds.has(i.id) ? "✓" : ""}</span>
+                )}
                 <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "var(--surface-2)" }}>{SOURCE_LABEL[i.source] ?? i.source}</span>
                 <span className="font-medium truncate max-w-64" title={i.sourceLabel}>{i.sourceLabel}</span>
                 <span className="text-xs px-1.5 py-0.5 rounded" style={{
@@ -152,7 +212,7 @@ export function SelfHealView() {
               )}
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {i.status === "open" && i.fixKind !== "none" && i.fixKind !== "needs_human" && (
-                  <button className="accent-btn text-xs px-2 py-1" onClick={() => void act("fix", i.id)} disabled={!!busy}>
+                  <button className="accent-btn text-xs px-2 py-1" onClick={() => void act("fix", i.id, true)} disabled={!!busy}>
                     {i.fixAttempts >= 2 ? "🔧 手动修复(不受自动上限限制)" : "⚡ 自动修复"}
                   </button>
                 )}

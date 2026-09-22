@@ -24,6 +24,9 @@ export function diagnose(errorText: string, source: IssueSource = "step"): Diagn
     // scrape 现已自带"CDP 不通自动拉起浏览器"的自愈,重跑抓取即可;仅反复失败才转 setup
     return { cause: "Chrome 调试端口未就绪:重跑抓取会自动拉起浏览器;若仍失败再执行「启动 Chrome」", fixKind: "retry_job" };
   }
+  if (/页面内请求失败|NetworkError|XMLHttpRequest/i.test(t)) {
+    return { cause: "BOSS 页面内 XHR 被拦截(常见于登录态失效或触发风控验证):打开专用浏览器完成验证/重新登录后重试", fixKind: "needs_human" };
+  }
   if (/ECONNREFUSED|ETIMEDOUT|ENOTFOUND|fetch failed|网络异常|连接被拒|拒绝连接|Connection .* (refused|reset)|socket hang up/i.test(t)) {
     return { cause: "网络瞬时故障(连接被拒/超时/DNS),重试通常可恢复", fixKind: retryKind };
   }

@@ -3,7 +3,7 @@ import { createTestDb } from "@/lib/db/test-util";
 import { seedIfEmpty } from "@/lib/db/seed";
 import { __setDbForTests } from "@/lib/db/client";
 import { diagnose, recordIssue } from "./issue-store";
-import { collectIssues, applyFix, listIssues } from "./self-heal";
+import { collectIssues, applyFix, listIssues, deleteIssues } from "./self-heal";
 import { flowRuns, flowTemplates, stepRuns, jobsRuns, tasks, executors, issues } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { startRun } from "./runner";
@@ -118,3 +118,20 @@ describe("applyFix 自动修复(有界)", () => {
 function nowIso(): string {
   return new Date().toISOString();
 }
+
+describe("deleteIssues 批量删除(2026-09-23 多选清理)", () => {
+  it("按 id 批量删除,返回删除数;空数组返回 0", async () => {
+    const n1 = recordIssue(db, { source: "step", sourceId: "del-1", sourceLabel: "A", errorText: "x" });
+    const n2 = recordIssue(db, { source: "step", sourceId: "del-2", sourceLabel: "B", errorText: "y" });
+    expect(await deleteIssues(db, [])).toBe(0);
+    const deleted = await deleteIssues(db, [n1.id, n2.id, "不存在的 id"]);
+    expect(deleted).toBeGreaterThanOrEqual(2);
+    expect((db.select().from(issues).all() as unknown[]).some((r) => (r as { id: string }).id === n1.id)).toBe(false);
+  });
+});
+
+describe("diagnose 风控/XHR 拦截(2026-09-23 BOSS 页面内请求失败)", () => {
+  it("页面内 XHR 失败判为需人工(登录态/风控),而非可重试", () => {
+    expect(diagnose("RuntimeError: 页面内请求失败:NetworkError: Failed to execute 'send' on 'XMLHttpRequest'").fixKind).toBe("needs_human");
+  });
+});

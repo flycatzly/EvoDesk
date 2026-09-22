@@ -1,6 +1,6 @@
 // 自我进化(自愈中心):扫描全部失败记录入账 → AI 补充分析 → 自动修复(有界、可追溯)。
 // 修复只允许白名单动作:重试失败步骤 / 重跑 BOSS 环境启动 / 重跑抓取;绝不自动删除或改库。
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@/lib/db/test-util";
 import { issues, jobsRuns, quickActionRuns, stepRuns, flowRuns, executors, flowTemplates, tasks } from "@/lib/db/schema";
 import { recordIssue, type FixKind } from "./issue-store";
@@ -88,6 +88,14 @@ export async function aiAnalyzeIssue(db: Db, issueId: string, executorId?: strin
   } catch (e) {
     return { ok: false, error: e instanceof Error ? `AI 调用失败:${e.message}` : "AI 调用失败" };
   }
+}
+
+/** 批量删除自愈记录(仅显式调用;修复留痕永不自动清除)。返回实际删除数。 */
+export async function deleteIssues(db: Db, ids: string[]): Promise<number> {
+  const clean = [...new Set(ids)].filter((x) => typeof x === "string" && x.length > 0);
+  if (clean.length === 0) return 0;
+  const r = await db.delete(issues).where(inArray(issues.id, clean));
+  return (r as unknown as { changes: number; affectedRows?: number }).changes ?? (r as unknown as { affectedRows: number }).affectedRows ?? clean.length;
 }
 
 export type FixOutcome = { ok: boolean; result: string };
