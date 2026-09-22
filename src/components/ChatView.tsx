@@ -32,6 +32,20 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [ttsBusyId, setTtsBusyId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // 转语音配置:音色/语言(多音色可选,音色自带口音语言;语言为标注与偏好)
+  const [ttsVoices, setTtsVoices] = useState<{ name: string; lang?: string }[]>([]);
+  const [ttsVoice, setTtsVoice] = useState<string>("");
+  const [ttsLang, setTtsLang] = useState<string>("中文");
+  useEffect(() => {
+    setTtsVoice(localStorage.getItem("tts-voice") ?? "");
+    setTtsLang(localStorage.getItem("tts-lang") ?? "中文");
+    void (async () => {
+      try {
+        const d = (await (await fetch("/api/tts")).json()) as { voices?: { name: string; lang?: string }[] };
+        setTtsVoices(d.voices ?? []);
+      } catch { /* TTS 离线不影响对话 */ }
+    })();
+  }, []);
   const bottomRef = useRef<HTMLDivElement>(null);
   const activeChat = chats.find((c) => c.id === activeId) ?? null;
   // 会话模式以当前会话自身的 mode 为准(教练并入对话台:同一页面承载 chat/coach 两种会话)
@@ -101,7 +115,7 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
     setTtsBusyId(m.id);
     setError(null);
     try {
-      const res = await fetch("/api/tts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: m.content }) });
+      const res = await fetch("/api/tts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: m.content, voice: ttsVoice || undefined }) });
       if (!res.ok) {
         const d = await res.json().catch(() => null) as { error?: string } | null;
         setError(d?.error ?? "语音合成失败");
@@ -299,6 +313,23 @@ ${m.content}`;
               {modelGroups.filter((m) => m.group === g).map((m) => <option key={m.executorId} value={m.executorId}>{m.label}</option>)}
             </optgroup>
           ))}
+        </select>
+        <select
+          className="input px-2 py-1.5 text-xs max-w-40"
+          value={ttsVoice}
+          onChange={(e) => { setTtsVoice(e.target.value); localStorage.setItem("tts-voice", e.target.value); }}
+          title="转语音使用的音色(更多音色在设置 → 语音合成中克隆注册)"
+        >
+          <option value="">音色:默认</option>
+          {ttsVoices.map((v) => <option key={v.name} value={v.name}>音色:{v.name}{v.lang ? `(${v.lang})` : ""}</option>)}
+        </select>
+        <select
+          className="input px-2 py-1.5 text-xs max-w-28"
+          value={ttsLang}
+          onChange={(e) => { setTtsLang(e.target.value); localStorage.setItem("tts-lang", e.target.value); }}
+          title="朗读语言偏好(模型按文本自动识别语种,音色决定口音)"
+        >
+          {["中文", "粤语", "英语", "日语", "韩语", "法语", "德语", "意大利语", "荷兰语", "波兰语", "西班牙语"].map((l) => <option key={l} value={l}>{l}</option>)}
         </select>
         <button onClick={() => setMaxi((v) => !v)} className="ghost-btn px-2 py-1.5 text-sm" title={maxi ? "还原布局(Esc 退出)" : "撑满屏幕(Esc 退出)"}>{maxi ? "⤡ 还原" : "⤢ 撑满"}</button>
       </div>
