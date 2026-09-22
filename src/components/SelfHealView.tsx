@@ -57,7 +57,8 @@ export function SelfHealView() {
       const res = await fetch("/api/self-heal", { method: "POST", body: JSON.stringify({ action, ...(id ? { id } : {}), force: action === "fix" && !!id }) });
       const data = await res.json();
       if (!res.ok && !data.results) {
-        setError(errorOf(data, "操作失败"));
+        // fix 未成功的响应体是 {ok:false, result};其余是 {error}。都要给用户可见反馈
+        setError(data.result ?? errorOf(data, "操作失败"));
         return;
       }
       if (action === "scan") setNotice(`扫描完成:新增 ${data.created} 个 issue`);

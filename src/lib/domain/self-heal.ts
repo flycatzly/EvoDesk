@@ -98,7 +98,9 @@ export async function applyFix(db: Db, issueId: string, opts: { force?: boolean 
   if (!issue) return { ok: false, result: "issue 不存在" };
   if (issue.status === "fixed") return { ok: false, result: "已修复" };
   if (issue.status === "ignored") return { ok: false, result: "已忽略" };
-  const fixKind: FixKind = issue.fixKind as FixKind;
+  let fixKind: FixKind = issue.fixKind as FixKind;
+  // 存量数据防御:job 来源误判 retry_step 时,按重跑抓取处理(sourceId 是 jobs_runs id,step_runs 查不到)
+  if (fixKind === "retry_step" && issue.source === "job") fixKind = "retry_job";
   const bump = (fixStatus: string, result: string) =>
     db.update(issues).set({ fixAttempts: issue.fixAttempts + 1, fixStatus, fixResult: result.slice(0, 500), updatedAt: new Date().toISOString() }).where(eq(issues.id, issueId)).run();
   // 拒绝执行(未真正尝试修复)不计入 attempts,避免到达上限后的反复点击虚增计数

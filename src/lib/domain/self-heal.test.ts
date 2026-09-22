@@ -19,10 +19,16 @@ describe("diagnose 启发式", () => {
   it("已知错误模式 → 诊断与修复类别", () => {
     expect(diagnose("无可用的 reviewer 执行器,可在执行器页启用或改用人工填写").fixKind).toBe("retry_step");
     expect(diagnose("! 等待登录超时(10 分钟)").fixKind).toBe("needs_human");
-    expect(diagnose("Chrome CDP 不可用:先执行 --setup-chrome").fixKind).toBe("rerun_setup");
+    // CDP 未就绪:scrape 已自带自动拉起浏览器,job 来源重跑抓取即可自愈
+    expect(diagnose("Chrome CDP 不可用:先执行 --setup-chrome").fixKind).toBe("retry_job");
     expect(diagnose("TypeError: fetch failed").fixKind).toBe("retry_step");
     expect(diagnose("request failed with status 401").fixKind).toBe("needs_human");
     expect(diagnose("莫名其妙的新错误").fixKind).toBe("none");
+  });
+  it("来源感知:同一超时文本,job 来源重跑抓取,step 来源重试步骤(回归:2026-09-23 分类错配致修复无反应)", () => {
+    expect(diagnose("运行超时(30 分钟)", "job").fixKind).toBe("retry_job");
+    expect(diagnose("运行超时(30 分钟)", "step").fixKind).toBe("retry_step");
+    expect(diagnose("连接被拒", "job").fixKind).toBe("retry_job");
   });
 });
 
