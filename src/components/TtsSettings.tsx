@@ -52,7 +52,7 @@ export function TtsSettings() {
     try {
       const res = await fetch("/api/settings", {
         method: "PUT",
-        body: JSON.stringify({ tts_base_url: base.trim(), tts_voice: voice.trim(), tts_lang: lang, tts_temperature: temperature, tts_top_p: topP, tts_seed: seed, tts_max_tokens: 512 }),
+        body: JSON.stringify({ tts_base_url: base.trim(), tts_voice: voice.trim(), tts_lang: lang, tts_temperature: temperature, tts_top_p: topP, tts_seed: seed }),
       });
       setMsg(res.ok ? "已保存" : "保存失败");
       if (res.ok) await load();

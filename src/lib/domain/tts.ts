@@ -39,7 +39,7 @@ export function ttsConfig(db: Db): {
       temperature: num(kv.tts_temperature, 0.3),
       topP: num(kv.tts_top_p, 0.9),
       seed: num(kv.tts_seed, 42),
-      maxTokens: num(kv.tts_max_tokens, 512),
+      maxTokens: num(kv.tts_max_tokens, 2048),
     },
   };
 }
@@ -64,46 +64,70 @@ export async function ttsStatus(db: Db): Promise<{ online: boolean; base: string
   }
 }
 
-export type SpeakResult = { audio: Buffer; contentType: string };
-
-/** 合成语音:调用 Audio8 /api/tts 返回 WAV 字节。支持音色与采样参数。 */
-export async function ttsSpeak(
-  db: Db,
-  text: string,
-  opts: { voice?: string; temperature?: number; topP?: number; seed?: number; maxTokens?: number } = {},
-): Promise<SpeakResult> {
-  const { base, voice, params } = ttsConfig(db);
-  const clean = text.trim();
-  if (!clean) throw new Error("text 必填");
-  if (clean.length > TTS_MAX_CHARS) throw new Error(`文本过长(${clean.length} 字符),请分次转换(上限 ${TTS_MAX_CHARS})`);
-  const body: Record<string, unknown> = {
-    text: clean,
-    voice_name: opts.voice?.trim() || voice || TTS_DEFAULT_VOICE,
-    max_new_tokens: Math.min(2048, Math.max(16, Math.round(opts.maxTokens ?? params.maxTokens))),
-    temperature: opts.temperature ?? params.temperature,
-    top_p: opts.topP ?? params.topP,
-    seed: opts.seed ?? params.seed,
-  };
-  const controller = new AbortController();
-  // CPU 推理较慢:首句可能 10-60s,超时放宽到 180s
-  const timer = setTimeout(() => controller.abort(), 180_000);
-  try {
-    const res = await fetch(`${base}/api/tts`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      throw new Error(`TTS 服务返回 ${res.status}:${detail.slice(0, 120)}`);
+/** 按句切分长文本为 ≤limit 的分段(模型建议单次 ≤150 字;在句号处切,超长单句硬切)。
+ *  转语音截断的根因:整段一次性合成会耗尽 max_new_tokens 帧预算;分段后每段独立合成再拼接。 */
+export function splitTextForTts(text: string, limit = 140): string[] {
+  const normalized = text.replace(/\r\n?/g, "\n");
+  const sentences = normalized.split(/(?<=[。！？!?；;\n])/);
+  const chunks: string[] = [];
+  let cur = "";
+  for (const piece of sentences) {
+    if ((cur + piece).length > limit && cur.trim()) {
+      chunks.push(cur.trim());
+      cur = piece;
+    } else {
+      cur += piece;
     }
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length === 0) throw new Error("TTS 服务返回空音频");
-    return { audio: buf, contentType: res.headers.get("content-type") ?? "audio/wav" };
-  } finally {
-    clearTimeout(timer);
+    while (cur.length > limit) {
+      chunks.push(cur.slice(0, limit));
+      cur = cur.slice(limit);
+    }
   }
+  if (cur.trim()) chunks.push(cur.trim());
+  return chunks;
+}
+
+/** 解析 WAV 的 data 块(跳过 RIFF 头),用于同格式 WAV 的无损拼接 */
+function wavDataOf(buf: Buffer): Buffer {
+  if (buf.toString("ascii", 0, 4) !== "RIFF") return buf;
+  let off = 12;
+  while (off + 8 <= buf.length) {
+    const id = buf.toString("ascii", off, off + 4);
+    const size = buf.readUInt32LE(off + 4);
+    if (id === "data") return buf.subarray(off + 8, Math.min(off + 8 + size, buf.length));
+    off += 8 + size + (size % 2);
+  }
+  return buf;
+}
+
+/** 用标准 44.1kHz/单声道/16bit 头重建拼接后的 WAV */
+function buildWav(pcmLength: number, sampleRate = 44100, channels = 1, bits = 16): Buffer {
+  const header = Buffer.alloc(44);
+  const byteRate = (sampleRate * channels * bits) / 8;
+  const blockAlign = (channels * bits) / 8;
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + pcmLength, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bits, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(pcmLength, 40);
+  return header;
+}
+
+/** 拼接同格式 WAV(44.1kHz 单声道 16bit,Audio8 codec 输出):取各段 data 块重建头 */
+export function concatWavs(buffers: Buffer[]): Buffer {
+  if (buffers.length === 0) throw new Error("没有可拼接的音频");
+  if (buffers.length === 1) return buffers[0];
+  const pcms = buffers.map((b) => wavDataOf(b));
+  const total = pcms.reduce((a, p) => a + p.length, 0);
+  return Buffer.concat([buildWav(total), ...pcms]);
 }
 
 export type VoiceInfo = { name: string; lang?: string; frames?: number; referenceText?: string };
@@ -154,10 +178,72 @@ export async function registrationAvailable(db: Db): Promise<boolean> {
 
 /** 删除本地音色目录(voices/<name>/;name 做路径段校验防穿越) */
 export function deleteVoice(db: Db, name: string): { ok: boolean; error?: string } {
-  if (!name || /[\\/:*?"<>|]/.test(name) || name === "." || name === "..") return { ok: false, error: "非法音色名" };
+  if (!name || /[\/:*?"<>|]/.test(name) || name === "." || name === "..") return { ok: false, error: "非法音色名" };
   const { voicesDir } = ttsConfig(db);
   const dir = path.join(path.resolve(voicesDir), path.basename(name));
   if (!fs.existsSync(dir)) return { ok: false, error: "音色不存在" };
   fs.rmSync(dir, { recursive: true, force: true });
   return { ok: true };
+}
+
+export type SpeakResult = { audio: Buffer; contentType: string };
+
+interface SpeakOptions {
+  voice?: string;
+  temperature?: number;
+  topP?: number;
+  seed?: number;
+  maxTokens?: number;
+}
+
+/** 单段合成(帧预算默认拉满 2048 ≈ 95 秒音频,分段下不可能截断) */
+async function synthesizeChunk(base: string, text: string, voice: string, opts: SpeakOptions, params: TtsParams): Promise<SpeakResult> {
+  const payload = {
+    text,
+    voice_name: voice || TTS_DEFAULT_VOICE,
+    max_new_tokens: Math.min(2048, Math.max(16, Math.round(opts.maxTokens ?? params.maxTokens))),
+    temperature: opts.temperature ?? params.temperature,
+    top_p: opts.topP ?? params.topP,
+    seed: opts.seed ?? params.seed,
+  };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 180_000);
+  try {
+    const res = await fetch(`${base}/api/tts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`TTS 服务返回 ${res.status}:${detail.slice(0, 120)}`);
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length === 0) throw new Error("TTS 服务返回空音频");
+    return { audio: buf, contentType: res.headers.get("content-type") ?? "audio/wav" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** 合成语音(公开入口):长文本按句自动分段 → 逐段合成 → 无损拼接完整 WAV。 */
+export async function ttsSpeak(
+  db: Db,
+  text: string,
+  opts: SpeakOptions = {},
+): Promise<SpeakResult> {
+  const { base, voice, params } = ttsConfig(db);
+  const clean = text.trim();
+  if (!clean) throw new Error("text 必填");
+  if (clean.length > TTS_MAX_CHARS) throw new Error(`文本过长(${clean.length} 字符),请分次转换(上限 ${TTS_MAX_CHARS})`);
+  const voiceName = opts.voice?.trim() || voice || TTS_DEFAULT_VOICE;
+  const chunks = splitTextForTts(clean);
+  if (chunks.length <= 1) return synthesizeChunk(base, chunks[0] ?? clean, voiceName, opts, params);
+  const results: Buffer[] = [];
+  for (const chunk of chunks) {
+    const r = await synthesizeChunk(base, chunk, voiceName, opts, params);
+    results.push(r.audio);
+  }
+  return { audio: concatWavs(results), contentType: "audio/wav" };
 }
