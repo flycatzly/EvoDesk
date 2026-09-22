@@ -2,7 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-interface Msg { id: string; role: string; content: string; model: string | null; costUsd: number }
+interface Msg { id: string; role: string; content: string; model: string | null; costUsd: number; tokensIn?: number; tokensOut?: number }
 
 export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAnyModel, mode = "chat", basePath = "/chat" }: {
   chats: { id: string; title: string; workdir: string | null; mode?: string }[];
@@ -23,6 +23,11 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
   // 会话管理:改名中的会话 id → 新标题;编辑目录中的会话 id → 目录草稿
   const [renaming, setRenaming] = useState<Record<string, string>>({});
   const [dirEditing, setDirEditing] = useState<Record<string, string>>({});
+  // 撑满屏幕 / 多选分享 / 复制反馈
+  const [maxi, setMaxi] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const activeChat = chats.find((c) => c.id === activeId) ?? null;
   // 会话模式以当前会话自身的 mode 为准(教练并入对话台:同一页面承载 chat/coach 两种会话)
@@ -35,9 +40,9 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
   const send = async () => {
     if (!input.trim() || streaming || !activeId) return;
     setError(null);
-    const userMsg: Msg = { id: `tmp-${Date.now()}`, role: "user", content: input, model: null, costUsd: 0 };
+    const userMsg: Msg = { id: `tmp-${Date.now()}`, role: "user", content: input, model: null, costUsd: 0, tokensIn: 0, tokensOut: 0 };
     const assistantId = `tmp-a-${Date.now()}`;
-    setMessages((m) => [...m, userMsg, { id: assistantId, role: "assistant", content: "", model: null, costUsd: 0 }]);
+    setMessages((m) => [...m, userMsg, { id: assistantId, role: "assistant", content: "", model: null, costUsd: 0, tokensIn: 0, tokensOut: 0 }]);
     const text = input;
     setInput("");
     setStreaming(true);
@@ -61,12 +66,12 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
         for (const block of blocks) {
           if (!block.startsWith("data:")) continue;
           // 解析失败(半截块/非 JSON 噪声)跳过该块,不中断整个流
-          let evt: { delta?: string; done?: boolean; error?: string; message?: { id: string; role: string; content: string; model: string | null; costUsd: number } };
+          let evt: { delta?: string; done?: boolean; error?: string; message?: { id: string; role: string; content: string; model: string | null; costUsd: number; tokensIn?: number; tokensOut?: number } };
           try { evt = JSON.parse(block.slice(5).trim()); } catch { continue; }
           if (evt.delta) setMessages((m) => m.map((x) => (x.id === assistantId ? { ...x, content: x.content + evt.delta } : x)));
           if (evt.done) {
             if (evt.error) { setError(evt.error); setMessages((m) => m.filter((x) => x.id !== assistantId)); }
-            else if (evt.message) setMessages((m) => m.map((x) => (x.id === assistantId ? { id: evt.message!.id, role: "assistant", content: evt.message!.content, model: evt.message!.model, costUsd: evt.message!.costUsd } : x)));
+            else if (evt.message) setMessages((m) => m.map((x) => (x.id === assistantId ? { id: evt.message!.id, role: "assistant", content: evt.message!.content, model: evt.message!.model, costUsd: evt.message!.costUsd, tokensIn: evt.message!.tokensIn ?? 0, tokensOut: evt.message!.tokensOut ?? 0 } : x)));
             bottomRef.current?.scrollIntoView({ behavior: "smooth" });
           }
         }
@@ -80,6 +85,65 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
       router.refresh();
     }
   };
+
+  // —— 消息复制 / 多选 / 分享导出 ——
+  const copyText = async (text: string, id: string | null = null) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (id) { setCopiedId(id); setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1500); }
+      else setError(null);
+    } catch {
+      setError("复制失败:浏览器未授权剪贴板");
+    }
+  };
+  const toggleSelected = (id: string) =>
+    setSelected((cur) => {
+      const n = new Set(cur);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  const exitSelect = () => { setSelectMode(false); setSelected(new Set()); };
+  // 导出文本:role 标签 + 模型/token 元信息,粘贴即读
+  const transcriptOf = (msgs: Msg[]) => {
+    const lines = msgs.map((m) => {
+      const who = m.role === "user" ? "🧑 用户" : "🤖 助手";
+      const meta = m.role === "assistant" && m.model ? `(model: ${m.model}${m.tokensOut ? ` · ↑${m.tokensIn ?? 0} ↓${m.tokensOut} tokens` : ""})` : "";
+      return `**${who}${meta}**
+
+${m.content}`;
+    });
+    return `# ${activeChat?.title ?? "对话分享"}\n\n> 分享自 EvoDesk 对话台 · ${new Date().toLocaleString("zh-CN")}\n\n---\n\n${lines.join("\n\n---\n\n")}\n`;
+  };
+  const selectedMsgs = messages.filter((m) => selected.has(m.id));
+  const shareSelected = (download: boolean) => {
+    const md = transcriptOf(selectedMsgs.length > 0 ? selectedMsgs : messages);
+    if (download) {
+      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `对话分享-${(activeChat?.title ?? "chat").slice(0, 20)}-${new Date().toISOString().slice(0, 10)}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      void copyText(md);
+    }
+  };
+  // 会话累计消耗(服务端已落库的 assistant 消息汇总)
+  const sumIn = messages.reduce((acc, m) => acc + (m.tokensIn ?? 0), 0);
+  const sumOut = messages.reduce((acc, m) => acc + (m.tokensOut ?? 0), 0);
+  const sumCost = messages.reduce((acc, m) => acc + (m.costUsd ?? 0), 0);
+
+  // Esc:退出撑满 / 退出多选
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (selectMode) exitSelect();
+      else if (maxi) setMaxi(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectMode, maxi]);
 
   // —— 需求教练:轮次提示与最终提示词操作 ——
   const rounds = messages.filter((m) => m.role === "assistant" && !m.id.startsWith("tmp-")).length;
@@ -166,7 +230,10 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
   const suggestionChips = ["介绍一下你能帮我做什么", "帮我规划今天的任务", "把这段话整理成笔记:…"];
 
   return (
-    <div className="flex flex-col" style={{ height: "calc(100vh - 170px)", minHeight: 500 }}>
+    <div
+      className={`flex flex-col ${maxi ? "fixed inset-0 z-50 p-3 sm:p-4" : ""}`}
+      style={maxi ? { background: "var(--bg)" } : { height: "calc(100dvh - 170px)", minHeight: 500 }}
+    >
       {/* 顶栏 */}
       <div className="flex gap-2 flex-wrap items-center pb-2.5 mb-3" style={{ borderBottom: "1px solid var(--border)" }}>
         <select className="input px-2 py-1.5 text-sm max-w-52" value={activeId ?? ""} onChange={(e) => router.push(`${basePath}?c=${e.target.value}`)}>
@@ -177,6 +244,12 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
         <button onClick={() => setMgrOpen((v) => !v)} className="ghost-btn px-2 py-1.5 text-sm" title="重命名 / 工作目录 / 删除">
           会话管理{mgrOpen ? " ▴" : " ▾"}
         </button>
+        <button
+          onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
+          className={`ghost-btn px-2 py-1.5 text-sm ${selectMode ? "ring-1" : ""}`}
+          style={selectMode ? { color: "var(--accent)" } : undefined}
+          title="勾选多条消息,批量复制或分享"
+        >☑ 多选</button>
         {activeChat?.workdir && (
           <span className="text-xs px-2 py-1 rounded truncate max-w-56" style={{ background: "var(--surface-2)", color: "var(--muted)" }} title={activeChat.workdir}>
             📂 {activeChat.workdir}
@@ -190,6 +263,7 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
             </optgroup>
           ))}
         </select>
+        <button onClick={() => setMaxi((v) => !v)} className="ghost-btn px-2 py-1.5 text-sm" title={maxi ? "还原布局(Esc 退出)" : "撑满屏幕(Esc 退出)"}>{maxi ? "⤡ 还原" : "⤢ 撑满"}</button>
       </div>
       {mgrOpen && (
         <div className="surface p-3 mb-3 space-y-2 max-h-72 overflow-auto chat-scroll" style={{ flex: "none" }}>
@@ -308,24 +382,42 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
           const isLast = idx === messages.length - 1;
           if (m.role === "user") {
             return (
-              <div key={m.id} className="flex justify-end items-end gap-2">
-                <div className="chat-user-bubble inline-block text-sm whitespace-pre-wrap px-3.5 py-2.5 max-w-[80%] text-left leading-relaxed">{m.content}</div>
+              <div key={m.id} className={`flex justify-end items-end gap-2 ${selectMode ? "cursor-pointer" : ""}`}
+                onClick={selectMode ? () => toggleSelected(m.id) : undefined}>
+                {selectMode && <SelectBox on={selected.has(m.id)} />}
+                <div className="flex flex-col items-end gap-1 min-w-0">
+                  <div className="chat-user-bubble inline-block text-sm whitespace-pre-wrap px-3.5 py-2.5 max-w-full text-left leading-relaxed">{m.content}</div>
+                  <button onClick={(e) => { if (selectMode) { e.stopPropagation(); toggleSelected(m.id); } else void copyText(m.content, m.id); }}
+                    className="text-xs" style={{ color: "var(--muted)" }}>
+                    {copiedId === m.id ? "✓ 已复制" : "复制"}
+                  </button>
+                </div>
                 <div className="chat-avatar" style={{ background: "var(--surface-2)", color: "var(--muted)", border: "1px solid var(--border)" }}>你</div>
               </div>
             );
           }
           const showCursor = streaming && isLast;
+          const tok = (m.tokensIn ?? 0) > 0 || (m.tokensOut ?? 0) > 0;
           return (
-            <div key={m.id} className="flex items-start gap-2">
+            <div key={m.id} className={`flex items-start gap-2 ${selectMode ? "cursor-pointer" : ""}`}
+              onClick={selectMode ? () => toggleSelected(m.id) : undefined}>
+              {selectMode && <SelectBox on={selected.has(m.id)} />}
               <div className="chat-avatar" style={{ background: "linear-gradient(135deg, var(--accent), var(--accent-2))", color: "#fff" }}>AI</div>
               <div className="max-w-[85%] min-w-0">
                 <div className="chat-ai-bubble inline-block text-sm whitespace-pre-wrap px-3.5 py-2.5 leading-relaxed">
                   {m.content}{showCursor && <span className="chat-cursor" />}
                 </div>
-                {(m.model || m.costUsd > 0) && (
-                  <div className="text-xs mt-1 flex items-center gap-2" style={{ color: "var(--muted)" }}>
-                    <span className="font-mono">{m.model}{m.costUsd > 0 ? ` · $${m.costUsd.toFixed(6)}` : ""}</span>
-                    <button onClick={() => toTask(m.content)} className="underline" style={{ color: "var(--accent)" }}>转为任务</button>
+                {(m.model || m.costUsd > 0 || tok) && (
+                  <div className="text-xs mt-1 flex items-center gap-2 flex-wrap" style={{ color: "var(--muted)" }}>
+                    <span className="font-mono">
+                      {m.model}
+                      {tok ? ` · ↑${m.tokensIn ?? 0} ↓${m.tokensOut ?? 0} tok` : ""}
+                      {m.costUsd > 0 ? ` · $${m.costUsd.toFixed(6)}` : ""}
+                    </span>
+                    <button onClick={(e) => { if (selectMode) { e.stopPropagation(); toggleSelected(m.id); } else void copyText(m.content, m.id); }} className="underline" style={{ color: "var(--accent)" }}>
+                      {copiedId === m.id ? "✓ 已复制" : "复制"}
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); toTask(m.content); }} className="underline" style={{ color: "var(--accent)" }}>转为任务</button>
                   </div>
                 )}
               </div>
@@ -335,6 +427,19 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
         <div ref={bottomRef} />
       </div>
 
+      {selectMode && (
+        <div className="mt-2 flex items-center gap-2 flex-wrap text-xs p-2 rounded" style={{ flex: "none", background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+          <span style={{ color: "var(--muted)" }}>已选 {selected.size} 条</span>
+          <button className="ghost-btn px-2 py-1" onClick={() => setSelected(selected.size === messages.length ? new Set() : new Set(messages.map((x) => x.id)))}>
+            {selected.size === messages.length ? "清空" : "全选"}
+          </button>
+          <button className="ghost-btn px-2 py-1" disabled={selected.size === 0} onClick={() => void shareSelected(false)}
+            style={selected.size === 0 ? { opacity: 0.5 } : undefined} title="把所选消息合并为一份可读文稿,复制到剪贴板">📋 复制合并</button>
+          <button className="accent-btn px-2 py-1" disabled={selected.size === 0} onClick={() => shareSelected(true)}
+            style={selected.size === 0 ? { opacity: 0.5 } : undefined} title="导出为 Markdown 文件下载(未选则导出整段对话)">📤 分享(.md){selected.size === 0 ? "(整段)" : ""}</button>
+          <button className="ghost-btn px-2 py-1 ml-auto" onClick={exitSelect}>取消(Esc)</button>
+        </div>
+      )}
       {error && <div className="text-xs mt-2" style={{ color: "var(--danger)" }}>{error}</div>}
 
       {/* 底部停靠输入区 */}
@@ -367,11 +472,30 @@ export function ChatView({ chats, activeId, initialMessages, modelGroups, hasAny
             title="发送 (Enter)"
           >{streaming ? "⏳" : "➤"}</button>
         </div>
-        <div className="text-xs mt-1.5 flex justify-between gap-2" style={{ color: "var(--muted)" }}>
-          <span>Enter 发送 · Shift+Enter 换行 · 流式回复中可继续输入</span>
+        <div className="text-xs mt-1.5 flex justify-between gap-2 flex-wrap" style={{ color: "var(--muted)" }}>
+          <span>
+            Enter 发送 · Shift+Enter 换行
+            {(sumIn > 0 || sumOut > 0) && (
+              <span className="font-mono" title="本会话累计 token 消耗与费用"> · 本会话 ↑{sumIn} ↓{sumOut} tok{sumCost > 0 ? ` · $${sumCost.toFixed(4)}` : ""}</span>
+            )}
+          </span>
           {activeChat && <span className="truncate max-w-64" title={activeChat.title}>{activeChat.title}</span>}
         </div>
       </div>
     </div>
+  );
+}
+
+
+function SelectBox({ on }: { on: boolean }) {
+  return (
+    <span
+      className="self-center shrink-0 inline-flex items-center justify-center rounded"
+      style={{
+        width: 18, height: 18, border: "1px solid var(--border)",
+        background: on ? "var(--accent)" : "var(--surface-2)",
+        color: "#fff", fontSize: 12, lineHeight: 1,
+      }}
+    >{on ? "✓" : ""}</span>
   );
 }

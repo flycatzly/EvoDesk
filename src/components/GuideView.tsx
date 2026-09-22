@@ -344,17 +344,17 @@ export function GuideView() {
               )}
             </div>
             {editMode && viewMode === "edit" ? (
-              <textarea className="w-full flex-1 text-xs font-mono p-3 rounded overflow-auto" style={{ background: "var(--surface-2)", minHeight: "60vh", outline: "none", border: "1px solid var(--border)", color: "var(--text)" }}
+              <textarea className="w-full flex-1 text-xs font-mono p-3 rounded overflow-auto" style={{ background: "var(--surface-2)", minHeight: "50vh", outline: "none", border: "1px solid var(--border)", color: "var(--text)" }}
                 value={editDraft} onChange={(e) => setEditDraft(e.target.value)} />
             ) : viewMode === "html" ? (
               <iframe
                 title="HTML 预览"
                 className="w-full flex-1 rounded"
-                style={{ minHeight: "60vh", border: "1px solid var(--border)", background: "#fff" }}
+                style={{ minHeight: "50vh", border: "1px solid var(--border)", background: "#fff" }}
                 srcDoc={docToHtml(reading.path.split("/").pop() ?? "doc", editMode ? editDraft : reading.content)}
               />
             ) : (
-              <div className="flex-1 overflow-auto text-sm guide-md" dangerouslySetInnerHTML={{ __html: markdownToHtml(editMode ? editDraft : reading.content) }} />
+              <div className="flex-1 min-h-0 overflow-auto text-sm guide-md" dangerouslySetInnerHTML={{ __html: markdownToHtml(editMode ? editDraft : reading.content) }} />
             )}
           </div>
         </div>

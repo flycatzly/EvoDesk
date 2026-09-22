@@ -29,7 +29,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
         key={active?.id ?? "none"}
         chats={chatRows.map((x) => ({ id: x.id, title: x.title, workdir: x.workdir, mode: x.mode }))}
         activeId={active?.id ?? null}
-        initialMessages={messages.map((m) => ({ id: m.id, role: m.role, content: m.content, model: m.model, costUsd: m.costUsd }))}
+        initialMessages={messages.map((m) => ({ id: m.id, role: m.role, content: m.content, model: m.model, costUsd: m.costUsd, tokensIn: m.tokensIn, tokensOut: m.tokensOut }))}
         modelGroups={groups}
         hasAnyModel={groups.length > 0}
       />
