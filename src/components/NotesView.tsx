@@ -123,6 +123,24 @@ export function NotesView({ notes: rows }: { notes: NoteRow[] }) {
     }
   };
 
+  const removeNote = async (id: string) => {
+    if (busy) return;
+    if (!window.confirm("删除这条笔记?不可恢复。")) return;
+    setBusy(`del-${id}`);
+    setNote(null);
+    try {
+      const res = await fetch(`/api/notes/${id}`, { method: "DELETE" });
+      const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!res.ok) { setNote(errorOf(data, "删除失败,请重试")); return; }
+      setNote("已删除");
+      router.refresh();
+    } catch {
+      setNote("网络异常,请重试");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div>
       {/* 一致性栏:成功/失败提示全程在此呈现 */}
@@ -212,6 +230,16 @@ export function NotesView({ notes: rows }: { notes: NoteRow[] }) {
                     </button>
                     <button type="button" disabled={!!busy} className="ghost-btn px-2 py-1 text-xs" onClick={() => toVault(n.id)}>
                       {busy === `tovault-${n.id}` ? "存入中…" : "存入 Obsidian"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!!busy}
+                      className="ghost-btn px-2 py-1 text-xs"
+                      style={{ color: "var(--danger)" }}
+                      onClick={() => removeNote(n.id)}
+                      title="删除这条笔记(不可恢复)"
+                    >
+                      {busy === `del-${n.id}` ? "删除中…" : "删除"}
                     </button>
                     {n.taskId && <span className="text-xs" style={{ color: "var(--muted)" }}>已关联任务</span>}
                     {n.vaultPath && <span className="text-xs" style={{ color: "var(--muted)" }}>已存入 Obsidian</span>}

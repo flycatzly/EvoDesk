@@ -4,6 +4,9 @@ rem 与 ZCode 会话无关,关掉本窗口后两个服务继续运行;停止方�
 rem   powershell "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | ? { $_.CommandLine -match 'next' } | % { Stop-Process -Id $_.ProcessId -Force }"
 cd /d "%~dp0.."
 
+rem 信任系统证书库:本机网络存在 TLS 拦截,剪藏抓取 GitHub 等站点需要(Node 22.15+/24)
+set NODE_USE_SYSTEM_CA=1
+
 rem 生产实例需要 .next 构建产物;缺失时先构建
 if not exist ".next\BUILD_ID" (
   echo [evodesk] 未发现生产构建,先执行 npm run build ...

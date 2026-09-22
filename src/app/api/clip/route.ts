@@ -26,6 +26,54 @@ function pickExecutor(db: ReturnType<typeof getDb>) {
   return pool.find((e) => e.role === "executor") ?? pool.find((e) => e.role === "planner") ?? pool[0] ?? null;
 }
 
+/** 抓取页面:直连(重试 2 次)失败后走 r.jina.ai 阅读代理兜底(应对 GitHub 等被网络重置的站点)。
+ *  返回正文文本与可选标题;全部失败抛错(消息含最后一次原因)。 */
+async function fetchPageText(url: string): Promise<{ text: string; title: string }> {
+  const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) EvoDesk/1.0";
+  const attempts: { run: () => Promise<{ text: string; title: string }>; label: string }[] = [
+    {
+      label: "直连",
+      run: async () => {
+        const res = await fetch(url, { headers: { "user-agent": UA, accept: "text/html" }, signal: AbortSignal.timeout(15_000), redirect: "follow" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const html = await res.text();
+        return { text: extractReadableText(html), title: (/<title>([^<]*)<\/title>/i.exec(html)?.[1] ?? "").trim() };
+      },
+    },
+    {
+      label: "直连重试",
+      run: async () => {
+        const res = await fetch(url, { headers: { "user-agent": UA, accept: "text/html" }, signal: AbortSignal.timeout(15_000), redirect: "follow" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const html = await res.text();
+        return { text: extractReadableText(html), title: (/<title>([^<]*)<\/title>/i.exec(html)?.[1] ?? "").trim() };
+      },
+    },
+    {
+      label: "阅读代理",
+      run: async () => {
+        const res = await fetch(`https://r.jina.ai/${url}`, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(30_000) });
+        if (!res.ok) throw new Error(`代理 HTTP ${res.status}`);
+        const md = await res.text();
+        // jina 输出首行常为 "Title: xxx"
+        const title = (/^Title:\s*(.+)$/m.exec(md)?.[1] ?? "").trim();
+        return { text: md, title };
+      },
+    },
+  ];
+  let lastErr = "";
+  for (const att of attempts) {
+    try {
+      const r = await att.run();
+      if (r.text.length >= 50) return r;
+      lastErr = "页面无可提取正文";
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message.slice(0, 80) : "网络异常";
+    }
+  }
+  throw new Error(lastErr || "网络异常");
+}
+
 // 网页 AI 摘要收藏(POST {url}):抓正文 → AI 摘要+标签 → 存为笔记(标题带来源)。
 export async function POST(req: NextRequest) {
   const raw = await req.json().catch(() => null);
@@ -33,21 +81,16 @@ export async function POST(req: NextRequest) {
   const url = body && typeof body.url === "string" ? body.url.trim() : "";
   if (!/^https?:\/\/\S+/.test(url)) return NextResponse.json({ error: "url 须为 http(s) 链接" }, { status: 400 });
 
-  // 1) 抓取(仅本地个人工具;10s 超时;UA 伪装减少反爬拦截)
-  let html: string;
+  // 1) 抓取(多级兜底)
+  let text: string;
+  let pageTitle = "";
   try {
-    const res = await fetch(url, {
-      headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) EvoDesk/1.0", accept: "text/html" },
-      signal: AbortSignal.timeout(10_000),
-      redirect: "follow",
-    });
-    if (!res.ok) return NextResponse.json({ error: `抓取失败:HTTP ${res.status}` }, { status: 502 });
-    html = await res.text();
+    const page = await fetchPageText(url);
+    text = page.text;
+    pageTitle = page.title;
   } catch (e) {
     return NextResponse.json({ error: `抓取失败:${e instanceof Error ? e.message.slice(0, 80) : "网络异常"}` }, { status: 502 });
   }
-  const text = extractReadableText(html);
-  if (text.length < 50) return NextResponse.json({ error: "页面无可提取正文(可能需要登录或是纯脚本渲染)" }, { status: 422 });
 
   // 2) AI 摘要
   const db = getDb();
@@ -74,14 +117,13 @@ export async function POST(req: NextRequest) {
   }
 
   // 3) 存为笔记(title = <title> 标签或 URL;body = 摘要 + 原文链接)
-  const titleMatch = /<title>([^<]*)<\/title>/i.exec(html);
-  const pageTitle = (titleMatch?.[1] ?? url).trim().slice(0, 100) || url;
   const nowIso = new Date().toISOString();
+  const pageTitleFinal = (pageTitle || url).trim().slice(0, 100) || url;
   const noteBody = `${summary}\n\n🔗 来源:${url}\n🏷️ 标签:${tags.join(" / ") || "未分类"}`;
   const id = crypto.randomUUID();
   db.insert(notes).values({
-    id, title: pageTitle, body: noteBody, tags: JSON.stringify(tags),
+    id, title: pageTitleFinal, body: noteBody, tags: JSON.stringify(tags),
     pinned: false, source: "manual", createdAt: nowIso, updatedAt: nowIso,
   }).run();
-  return NextResponse.json({ ok: true, id, title: pageTitle, summary, tags });
+  return NextResponse.json({ ok: true, id, title: pageTitleFinal, summary, tags });
 }
