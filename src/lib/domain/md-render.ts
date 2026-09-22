@@ -4,11 +4,17 @@ export function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+function safeHref(href: string): string {
+  // 危险协议一律置空锚;引号转 %22 防止逃逸 href 属性(escapeHtml 不转义引号)
+  if (/^\s*(javascript|data|vbscript):/i.test(href)) return "#";
+  return href.replace(/"/g, "%22");
+}
+
 function inline(s: string): string {
   return escapeHtml(s)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text: string, href: string) => `<a href="${safeHref(href)}" target="_blank" rel="noreferrer">${text}</a>`);
 }
 
 export function markdownToHtml(md: string): string {

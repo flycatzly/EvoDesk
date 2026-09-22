@@ -38,6 +38,15 @@ describe("startRun", () => {
   });
 });
 
+describe("runLlmStep 任务缺失(回归:2026-09-22 NPE 修复)", () => {
+  it("run 存活但任务行被删 → RunError 而非 TypeError", async () => {
+    const { runId } = await startRun(db, readyTaskId);
+    db.delete(tasks).where(eq(tasks.id, readyTaskId)).run();
+    await expect(async () => await runLlmStep(db, runId, 0)).rejects.toThrow(/任务不存在/);
+    await expect(async () => await runLlmStep(db, runId, 0)).rejects.not.toThrow(TypeError);
+  });
+});
+
 describe("getCurrentStep/syncRunStatus", () => {
   it("当前步 = 第一个非 done/skipped 步骤", async () => {
     const { runId } = await startRun(db, readyTaskId);
