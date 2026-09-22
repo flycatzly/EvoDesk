@@ -3,6 +3,25 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isPathWithin } from "./script-security";
+import { readSettingsKv } from "@/lib/db/read-settings";
+import { expandHome } from "./skills";
+import type { Db } from "@/lib/db/test-util";
+
+/** 宝典源目录(settings.guide_dirs 数组,白名单)。放在 domain 层供多个路由共享(路由模块不可跨路由导入)。 */
+export function guideDirsFromDb(db: Db): string[] {
+  const kv = readSettingsKv(db);
+  const raw = kv.guide_dirs;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((d): d is string => typeof d === "string" && d.trim().length > 0).map(expandHome);
+}
+
+/** 解析宝典源:必须在 guide_dirs 白名单内;dir 为空回退第一个源。 */
+export function resolveGuideDir(db: Db, dir: string | null): string | null {
+  const list = guideDirsFromDb(db);
+  if (!dir) return list[0] ?? null;
+  const abs = expandHome(dir);
+  return list.find((w) => path.resolve(w) === path.resolve(abs)) ?? null;
+}
 
 export type GuideEntry = {
   relPath: string; // POSIX 相对路径(含分类)

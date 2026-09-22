@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import path from "node:path";
 import { getDb } from "@/lib/db/client";
 import { executors } from "@/lib/db/schema";
-import { resolveVaultRoot, readNoteFile } from "@/lib/domain/vault";
+import { resolveVaultRoot, readNoteFile, writeNoteFile, getVaultRoot } from "@/lib/domain/vault";
 import { callLlmWithRetry, executorLlmConfig } from "@/lib/llm/client";
 
 export const runtime = "nodejs";
@@ -20,7 +21,15 @@ export async function POST(req: NextRequest) {
   const raw = await req.json().catch(() => null);
   const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
   const db = getDb();
-  const root = resolveVaultRoot(db, body && typeof body.root === "string" ? body.root : null);
+  const rootParam = body && typeof body.root === "string" ? body.root : null;
+  // 检索源两级白名单:资料库根(vault_roots)优先;宝典源目录(guide_dirs)其次(问宝典复用本管道)。
+  let root = resolveVaultRoot(db, rootParam);
+  let sourceKind: "vault" | "guide" = "vault";
+  if (!root && rootParam) {
+    const { resolveGuideDir } = await import("@/lib/domain/guide");
+    const hit = resolveGuideDir(db, rootParam);
+    if (hit) { root = hit; sourceKind = "guide"; }
+  }
   if (!root) return NextResponse.json({ error: "无可用资料库" }, { status: 400 });
   const question = body && typeof body.question === "string" ? body.question.trim() : "";
   if (!question || question.length < 2) return NextResponse.json({ error: "question 必填" }, { status: 400 });
@@ -70,7 +79,31 @@ export async function POST(req: NextRequest) {
         context.slice(0, 20_000),
       ].join("\n"),
     }]);
-    return NextResponse.json({ answer: r.text, refs: top.map((t) => t.relPath) });
+
+    // 记录到知识库:save=true(问宝典)时把问答写入主库「宝典问答」目录(尽力而为,失败不拦截答案)
+    let saved: string | null = null;
+    if (body?.save === true) {
+      try {
+        const vaultRoot = getVaultRoot(db);
+        if (vaultRoot) {
+          const now = new Date();
+          const stamp = `${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+          const safeTitle = question.replace(/[\\/:*?"<>|\r\n]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 30) || "问答";
+          const relDir = sourceKind === "guide" ? "宝典问答" : "知识库问答";
+          const refsList = top.map((t) => `- ${t.relPath}`).join("\n");
+          const content = `---\ntitle: ${safeTitle}\nsource: ${sourceKind}-qa\ndate: ${now.toISOString()}\n---\n\n# Q:${question}\n\n${r.text}\n\n## 引用来源\n\n${refsList}\n`;
+          let rel = `${relDir}/${stamp}_${safeTitle}.md`;
+          let i = 1;
+          while (true) {
+            try { readNoteFile(vaultRoot, rel); rel = `${relDir}/${stamp}_${safeTitle}(${i++}).md`; } catch { break; }
+          }
+          writeNoteFile(vaultRoot, rel, content);
+          saved = rel;
+        }
+      } catch { /* 保存失败不影响答案 */ }
+    }
+
+    return NextResponse.json({ answer: r.text, refs: top.map((t) => t.relPath), saved });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? `AI 调用失败:${e.message.slice(0, 100)}` : "AI 调用失败" }, { status: 502 });
   }

@@ -46,7 +46,7 @@ export function GuideView() {
   // AI 问答
   const [qaQ, setQaQ] = useState("");
   const [qaBusy, setQaBusy] = useState(false);
-  const [qa, setQa] = useState<{ answer: string; refs: string[] } | null>(null);
+  const [qa, setQa] = useState<{ answer: string; refs: string[]; saved?: string | null } | null>(null);
   const [qaError, setQaError] = useState<string | null>(null);
 
   const loadDirs = useCallback(async () => {
@@ -191,11 +191,12 @@ export function GuideView() {
     setQaBusy(true);
     setQaError(null);
     try {
-      const res = await fetch("/api/vault/qa", { method: "POST", body: JSON.stringify({ root: dir, question }) });
+      // save=true:AI 生成答案的同时自动把问答记录写入知识库(Obsidian 主库「宝典问答」目录)
+      const res = await fetch("/api/vault/qa", { method: "POST", body: JSON.stringify({ root: dir, question, save: true }) });
       const data = await res.json();
       if (!res.ok) { setQaError(errorOf(data, "问答失败")); return; }
-      const d = data as { answer: string; refs: string[] };
-      setQa({ answer: d.answer, refs: d.refs ?? [] });
+      const d = data as { answer: string; refs: string[]; saved?: string | null };
+      setQa({ answer: d.answer, refs: d.refs ?? [], saved: d.saved ?? null });
     } catch {
       setQaError("问答请求失败");
     } finally {
@@ -294,6 +295,9 @@ export function GuideView() {
             {qa && (
               <div className="rounded p-2 mt-2 text-xs" style={{ border: "1px solid var(--border)" }}>
                 <div className="whitespace-pre-wrap mb-1.5">{qa.answer}</div>
+                {qa.saved && (
+                  <div className="mb-1.5" style={{ color: "var(--ok)" }}>💾 问答已记录到知识库:{qa.saved}</div>
+                )}
                 {qa.refs.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {qa.refs.map((r) => (

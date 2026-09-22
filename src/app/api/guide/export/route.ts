@@ -4,8 +4,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getDb } from "@/lib/db/client";
-import { resolveGuideDir } from "../route";
-import { scanGuide, readGuideDoc, docToHtml } from "@/lib/domain/guide";
+import { resolveGuideDir, scanGuide, readGuideDoc, docToHtml } from "@/lib/domain/guide";
 import { resolveVaultRoot } from "@/lib/domain/vault";
 import { isPathWithin } from "@/lib/domain/script-security";
 import { conflictFreeName } from "@/lib/domain/library-ai";
@@ -15,7 +14,7 @@ export const dynamic = "force-dynamic";
 const execFileAsync = promisify(execFile);
 
 function resolveDirFromBody(body: Record<string, unknown> | null): string | null {
-  return resolveGuideDir(body && typeof body.dir === "string" ? body.dir : null);
+  return resolveGuideDir(getDb(), body && typeof body.dir === "string" ? body.dir : null);
 }
 
 /**
