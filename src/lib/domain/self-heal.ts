@@ -176,7 +176,7 @@ ${result}
             "--pages", String(params.pages ?? 1),
             ...(params.no_detail ? ["--no-detail"] : []),
           ];
-    const out = spawnJobsScript({ kind, args, db, params: params as Record<string, unknown> });
+    const out = await spawnJobsScript({ kind, args, db, params: params as Record<string, unknown> });
     if ("error" in out) {
       bump("failed", `无法自动重启:${out.error}`);
       return { ok: false, result: out.error };

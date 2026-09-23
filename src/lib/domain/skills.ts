@@ -25,8 +25,8 @@ export function expandHome(p: string): string {
 }
 
 /** settings.skills_dirs(JSON 数组;非法/缺省回退默认集) */
-export function skillsDirsFromSettings(db: Db): string[] {
-  const kv = readSettingsKv(db);
+export async function skillsDirsFromSettings(db: Db): Promise<string[]> {
+  const kv = await readSettingsKv(db);
   const raw = kv.skills_dirs;
   if (Array.isArray(raw)) {
     const dirs = raw.filter((d): d is string => typeof d === "string" && d.trim().length > 0).map(expandHome);

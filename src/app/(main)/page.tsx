@@ -23,8 +23,8 @@ export const dynamic = "force-dynamic";
 export default async function WorkbenchPage({ searchParams }: { searchParams: Promise<{ c?: string }> }) {
   const { c } = await searchParams;
   const db = getDb();
-  tickRecurring(db);
-  const kv = readSettingsKv(db);
+  await tickRecurring(db);
+  const kv = await readSettingsKv(db);
   const timezone = typeof kv.timezone === "string" ? kv.timezone : "";
 
   const rows = db.select().from(canvases).all() as (typeof canvases.$inferSelect)[];
@@ -42,7 +42,7 @@ export default async function WorkbenchPage({ searchParams }: { searchParams: Pr
 
   const layout: CanvasLayout = parseLayout(current.layout);
   const types = [...new Set(layout.flatMap((g) => g.widgets.map((w) => w.type)))] as WidgetType[];
-  const data = collectWidgetData(db, types, timezone);
+  const data = await collectWidgetData(db, types, timezone);
   const widgetNodes: Record<string, React.ReactNode> = {};
   for (const g of layout) {
     for (const w of g.widgets) {

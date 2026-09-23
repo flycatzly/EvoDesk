@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db/client";
 import { executors } from "@/lib/db/schema";
 import { callLlmWithRetry, executorLlmConfig } from "@/lib/llm/client";
+import { readSettingsKv } from "@/lib/db/read-settings";
 import { collectWidgetData } from "@/lib/domain/canvas-data";
 import { listIssues } from "@/lib/domain/self-heal";
 
@@ -12,9 +13,9 @@ export const dynamic = "force-dynamic";
 // GET 返回汇总原料(前端可显示生成时间);POST 返回 AI 文本。
 export async function GET(_req: NextRequest) {
   const db = getDb();
-  const kv = (await import("@/lib/db/read-settings")).readSettingsKv(db);
+  const kv = await readSettingsKv(db);
   const tz = typeof kv.timezone === "string" ? kv.timezone : "";
-  const data = collectWidgetData(db, ["counters", "todo", "calendar", "radar"], tz);
+  const data = await collectWidgetData(db, ["counters", "todo", "calendar", "radar"], tz);
   const { stats } = listIssues(db);
   return NextResponse.json({
     counters: data.counters,
@@ -29,9 +30,9 @@ export async function POST(req: NextRequest) {
   const db = getDb();
   const raw = await req.json().catch(() => null);
   const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
-  const kv = (await import("@/lib/db/read-settings")).readSettingsKv(db);
+  const kv = await readSettingsKv(db);
   const tz = typeof kv.timezone === "string" ? kv.timezone : "";
-  const data = collectWidgetData(db, ["counters", "todo", "calendar", "radar"], tz);
+  const data = await collectWidgetData(db, ["counters", "todo", "calendar", "radar"], tz);
   const { stats } = listIssues(db);
 
   const enabledLlm = (db.select().from(executors).all() as (typeof executors.$inferSelect)[]).filter((e) => e.enabled && e.type === "llm");

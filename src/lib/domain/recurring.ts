@@ -29,8 +29,8 @@ export function nextRunAfter(freq: Freq, weekday: number | null, from: Date): st
 // "读 next_run_at → 插任务 → 推进"的 check-then-insert 会产生同日重复投放。
 // 对策:预检(无到期不开事务)→ immediate 写锁事务内**重读** next_run_at 再插入;
 // 后到进程排到锁后看到已推进的 next_run_at,自然跳过。
-export function tickRecurring(db: Db, now: Date = new Date()): number {
-  const rules = db.select().from(recurringRules).where(eq(recurringRules.enabled, true)).all() as (typeof recurringRules.$inferSelect)[];
+export async function tickRecurring(db: Db, now: Date = new Date()): Promise<number> {
+  const rules = await db.select().from(recurringRules).where(eq(recurringRules.enabled, true)) as (typeof recurringRules.$inferSelect)[];
   const dueIds = rules.filter((r) => new Date(r.nextRunAt) <= now).map((r) => r.id);
   if (dueIds.length === 0) return 0;
   let created = 0;

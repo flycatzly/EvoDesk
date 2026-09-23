@@ -13,8 +13,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const execFileAsync = promisify(execFile);
 
-function resolveDirFromBody(body: Record<string, unknown> | null): string | null {
-  return resolveGuideDir(getDb(), body && typeof body.dir === "string" ? body.dir : null);
+async function resolveDirFromBody(body: Record<string, unknown> | null): Promise<string | null> {
+  return await resolveGuideDir(getDb(), body && typeof body.dir === "string" ? body.dir : null);
 }
 
 /**
@@ -26,7 +26,7 @@ function resolveDirFromBody(body: Record<string, unknown> | null): string | null
 export async function POST(req: NextRequest) {
   const raw = await req.json().catch(() => null);
   const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
-  const root = resolveDirFromBody(body);
+  const root = await resolveDirFromBody(body);
   if (!root) return NextResponse.json({ error: "目录不在宝典白名单内" }, { status: 400 });
   const mode = body && typeof body.mode === "string" ? body.mode : "md";
   const tree = scanGuide(root);

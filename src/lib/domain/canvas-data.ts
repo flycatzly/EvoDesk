@@ -37,17 +37,17 @@ export const LINK_WIDGET_MAX_GROUPS = 6;
 export const LINK_WIDGET_MAX_PER_GROUP = 8;
 
 /** 风险雷达四类项(从旧仪表盘 page.tsx 原样抽取,口径不变) */
-export function buildRadarItems(db: Db, allTasks: (typeof tasks.$inferSelect)[], overdueCount: number, overdueTitles: string[], now: Date): RadarItem[] {
-  const kv = readSettingsKv(db);
+export async function buildRadarItems(db: Db, allTasks: (typeof tasks.$inferSelect)[], overdueCount: number, overdueTitles: string[], now: Date): Promise<RadarItem[]> {
+  const kv = await readSettingsKv(db);
   const timeoutHours = typeof kv.waiting_human_timeout_hours === "number" ? kv.waiting_human_timeout_hours : 24;
   const costBudgetUsd = typeof kv.cost_budget_usd === "number" ? kv.cost_budget_usd : 10;
   const timeoutTasks = allTasks.filter(
     (t) => t.status === "waiting_human" && now.getTime() - new Date(t.updatedAt).getTime() > timeoutHours * 3600_000
   );
-  const flowRunRows = db.select().from(flowRuns).all() as (typeof flowRuns.$inferSelect)[];
+  const flowRunRows = (await db.select().from(flowRuns)) as (typeof flowRuns.$inferSelect)[];
   const weekAgoIso = new Date(now.getTime() - 7 * 24 * 3600_000).toISOString();
   const weekCostUsd = flowRunRows.filter((r) => r.startedAt > weekAgoIso).reduce((s, r) => s + r.totalCostUsd, 0);
-  const flowTemplateRows = db.select().from(flowTemplates).all() as (typeof flowTemplates.$inferSelect)[];
+  const flowTemplateRows = (await db.select().from(flowTemplates)) as (typeof flowTemplates.$inferSelect)[];
   const lowPerfTemplates = flowTemplateRows.filter((t) => t.statRuns >= 5 && t.statSuccessRate < 0.5);
 
   const items: RadarItem[] = [];
@@ -102,17 +102,17 @@ function vaultStats(db: Db): WidgetData["vault"] {
 }
 
 /** 按画布用到的组件类型收集数据;未请求的类型不出现在结果里 */
-export function collectWidgetData(db: Db, types: WidgetType[], timezone?: string | null, now: Date = new Date()): WidgetDataBundle {
+export async function collectWidgetData(db: Db, types: WidgetType[], timezone?: string | null, now: Date = new Date()): Promise<WidgetDataBundle> {
   const wanted = new Set<WidgetType>(types);
   const needsTasks = wanted.has("counters") || wanted.has("todo") || wanted.has("calendar") || wanted.has("radar");
-  const allTasks = needsTasks ? (db.select().from(tasks).all() as (typeof tasks.$inferSelect)[]) : [];
+  const allTasks = needsTasks ? ((await db.select().from(tasks)) as (typeof tasks.$inferSelect)[]) : [];
   const todayStr = tzToday(typeof timezone === "string" ? timezone : "", now);
   const active = allTasks.filter((t) => !["done", "archived", "canceled"].includes(t.status));
   const overdue = active.filter((t) => t.dueDate && t.dueDate < todayStr).sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1));
   const dueToday = active.filter((t) => t.dueDate === todayStr);
   // 今日清单保留"今日已完成"(划线可取消勾选);逾期/今日截止仍只列未完成
   const doneToday = allTasks.filter((t) => t.status === "done" && t.dueDate === todayStr);
-  const projectRows = (db.select().from(projects).all() as (typeof projects.$inferSelect)[]).filter((p) => !p.archived);
+  const projectRows = ((await db.select().from(projects)) as (typeof projects.$inferSelect)[]).filter((p) => !p.archived);
   const projectName = (id: string | null) => projectRows.find((p) => p.id === id)?.name ?? null;
   const toLite = (t: typeof tasks.$inferSelect): TaskLite => ({
     id: t.id, title: t.title, priority: t.priority, dueDate: t.dueDate, status: t.status,
@@ -128,7 +128,7 @@ export function collectWidgetData(db: Db, types: WidgetType[], timezone?: string
       running: allTasks.filter((t) => t.status === "running").length,
       waitingHuman: allTasks.filter((t) => t.status === "waiting_human").length,
       inbox: allTasks.filter((t) => t.status === "inbox").length,
-      notes: (db.select().from(notes).all() as unknown[]).length,
+      notes: ((await db.select().from(notes)) as unknown[]).length,
       projects: projectRows.map((p) => {
         const pt = allTasks.filter((t) => t.projectId === p.id);
         const done = pt.filter((t) => ["done", "archived"].includes(t.status)).length;
@@ -150,7 +150,7 @@ export function collectWidgetData(db: Db, types: WidgetType[], timezone?: string
     bundle.calendar = { today: todayStr, monthLabel: `${y} 年 ${m} 月`, dayCounts };
   }
   if (wanted.has("notes")) {
-    const rows = (db.select().from(notes).all() as (typeof notes.$inferSelect)[])
+    const rows = ((await db.select().from(notes)) as (typeof notes.$inferSelect)[])
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, 5)
       .map((n) => ({ id: n.id, title: n.title, updatedAt: n.updatedAt }));
@@ -159,7 +159,7 @@ export function collectWidgetData(db: Db, types: WidgetType[], timezone?: string
   if (wanted.has("links")) {
     // 首页画布限量:全量渲染会在浏览器书签批量导入后拖垮首页(实测 1292 条/103 分类),
     // 组件只展示前几个分类、每类前几条,完整列表去 /links
-    const rows = (db.select().from(links).all() as (typeof links.$inferSelect)[])
+    const rows = ((await db.select().from(links)) as (typeof links.$inferSelect)[])
       .sort((a, b) => a.sort - b.sort || a.createdAt.localeCompare(b.createdAt));
     const byCat = new Map<string, { id: string; title: string; url: string }[]>();
     for (const l of rows) {
@@ -174,7 +174,7 @@ export function collectWidgetData(db: Db, types: WidgetType[], timezone?: string
   }
   if (wanted.has("goals")) {
     bundle.goals = {
-      goals: (db.select().from(goals).all() as (typeof goals.$inferSelect)[])
+      goals: ((await db.select().from(goals)) as (typeof goals.$inferSelect)[])
         .filter((g) => !g.archived)
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         .map((g) => ({ id: g.id, title: g.title, current: g.current, target: g.target, unit: g.unit, color: g.color, deadline: g.deadline, category: g.category })),
@@ -184,11 +184,11 @@ export function collectWidgetData(db: Db, types: WidgetType[], timezone?: string
     bundle.vault = vaultStats(db);
   }
   if (wanted.has("radar")) {
-    bundle.radar = { items: buildRadarItems(db, allTasks, overdue.length, overdue.map((t) => t.title), now) };
+    bundle.radar = { items: await buildRadarItems(db, allTasks, overdue.length, overdue.map((t) => t.title), now) };
   }
   if (wanted.has("quickactions")) {
     bundle.quickactions = {
-      actions: (db.select().from(quickActions).all() as (typeof quickActions.$inferSelect)[])
+      actions: ((await db.select().from(quickActions)) as (typeof quickActions.$inferSelect)[])
         .filter((a) => a.enabled)
         .sort((a, b) => (a.sort !== b.sort ? a.sort - b.sort : a.createdAt.localeCompare(b.createdAt))),
     };

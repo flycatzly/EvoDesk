@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     params = { action: kind };
   }
 
-  const out = spawnJobsScript({ kind, args, db: getDb(), params });
+  const out = await spawnJobsScript({ kind, args, db: getDb(), params });
   if ("error" in out) return NextResponse.json({ error: out.error }, { status: 409 });
   return NextResponse.json({ ok: true, runId: out.runId });
 }

@@ -28,10 +28,10 @@ function safeTitle(t: string): string {
   return cleaned || "随记";
 }
 
-function inboundDir(db: ReturnType<typeof getDb>): { root: string; dir: string; rel: string } | null {
+async function inboundDir(db: ReturnType<typeof getDb>): Promise<{ root: string; dir: string; rel: string } | null> {
   const vaultRoot = resolveVaultRoot(db, null);
   if (!vaultRoot) return null;
-  const kv = readSettingsKv(db);
+  const kv = await readSettingsKv(db);
   const sub = typeof kv.inbound_subdir === "string" && kv.inbound_subdir.trim() ? kv.inbound_subdir.trim().replace(/[\\/:*?"<>|]/g, "-").slice(0, 40) : "随记";
   const dir = path.resolve(vaultRoot, sub);
   if (!isPathWithin(dir, vaultRoot)) return null;
@@ -40,7 +40,7 @@ function inboundDir(db: ReturnType<typeof getDb>): { root: string; dir: string; 
 
 export async function POST(req: NextRequest) {
   const db = getDb();
-  const kv = readSettingsKv(db);
+  const kv = await readSettingsKv(db);
   const token = typeof kv.inbound_token === "string" ? kv.inbound_token : "";
   const given = new URL(req.url).searchParams.get("token") ?? req.headers.get("x-inbound-token") ?? "";
   if (!token || given !== token) {
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
   text = text.replace(/\r\n/g, "\n").trim();
   if (!text) return NextResponse.json({ error: "text 必填(随记内容)" }, { status: 400 });
 
-  const target = inboundDir(db);
+  const target = await inboundDir(db);
   if (!target) return NextResponse.json({ error: "无可用 Obsidian 资料库:先在设置配置 vault 路径" }, { status: 400 });
 
   fs.mkdirSync(target.dir, { recursive: true });
@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
 
 // 生成/重置随记令牌(GET = 查看状态并返回局域网接入地址,PUT = 生成新令牌)
 export async function GET() {
-  const kv = readSettingsKv(getDb());
+  const kv = await readSettingsKv(getDb());
   // 局域网地址:手机/其他设备无法访问 localhost,需用本机内网 IP
   let lanUrl: string | null = null;
   try {

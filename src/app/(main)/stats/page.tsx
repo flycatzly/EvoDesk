@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 // 与 /api/stats 同源:直接调 buildStats,页面与端点口径天然一致(不走 HTTP 自fetch)
 export default async function StatsPage() {
   const db = getDb();
-  const kv = readSettingsKv(db);
+  const kv = await readSettingsKv(db);
   const stats = buildStats(db, new Date(), typeof kv.timezone === "string" ? kv.timezone : "");
   return (
     <div className="max-w-5xl">

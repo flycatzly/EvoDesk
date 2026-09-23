@@ -21,7 +21,7 @@ function moveFile(root: string, fromRel: string, toDirName: string): string {
 export async function POST(req: NextRequest) {
   const raw = await req.json().catch(() => null);
   const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
-  const root = resolveOrganizeDir(body && typeof body.dir === "string" ? body.dir : null);
+  const root = await resolveOrganizeDir(body && typeof body.dir === "string" ? body.dir : null);
   if (!root) return NextResponse.json({ error: "目录不在整理白名单内" }, { status: 400 });
   const apply = body?.apply === true;
 

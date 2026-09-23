@@ -28,11 +28,11 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
     .all()[0];
   if (!row) notFound();
 
-  const kv = readSettingsKv(db);
+  const kv = await readSettingsKv(db);
   const timezone = typeof kv.timezone === "string" ? kv.timezone : "";
   const layout: CanvasLayout = parseLayout(row.layout);
   const types = [...new Set(layout.flatMap((g) => g.widgets.map((w) => w.type)))] as WidgetType[];
-  const data = collectWidgetData(db, types, timezone);
+  const data = await collectWidgetData(db, types, timezone);
 
   const widgetNodes: Record<string, React.ReactNode> = {};
   for (const g of layout) {

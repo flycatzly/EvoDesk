@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   const language = typeof form.get("language") === "string" ? String(form.get("language")).trim() : "";
 
   const db = getDb();
-  const { base } = (await import("@/lib/domain/tts")).ttsConfig(db);
+  const { base } = await (await import("@/lib/domain/tts")).ttsConfig(db);
   // multipart 原样转发到 Audio8 服务
   const up = new FormData();
   up.append("audio", audio, audio.name || "reference.wav");
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
   }
   // 语言标注:存 settings.tts_voice_langs 映射,供对话台音色选择器显示与分组
   if (language) {
-    const kv = readSettingsKv(db);
+    const kv = await readSettingsKv(db);
     const map = (kv.tts_voice_langs && typeof kv.tts_voice_langs === "object" ? { ...(kv.tts_voice_langs as Record<string, string>) } : {});
     map[name] = language;
     const value = JSON.stringify(map);
@@ -68,6 +68,6 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const name = new URL(req.url).searchParams.get("name") ?? "";
   const db = getDb();
-  const r = deleteVoice(db, name);
+  const r = await deleteVoice(db, name);
   return NextResponse.json(r, { status: r.ok ? 200 : 400 });
 }

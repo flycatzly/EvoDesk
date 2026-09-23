@@ -26,7 +26,7 @@ export function stageSkills(skills: SkillInfo[], stageRoot: string): number {
 // 导出技能包(zip):把全部已扫描技能按 <分类>/<技能名>/ 打包,解压进任意技能目录即可直接使用
 export async function GET() {
   const db = getDb();
-  const dirs = skillsDirsFromSettings(db);
+  const dirs = await skillsDirsFromSettings(db);
   const { skills } = scanSkillsDirs(dirs);
   if (skills.length === 0) {
     return NextResponse.json({ error: "未扫描到任何技能,先在技能地图执行扫描" }, { status: 400 });

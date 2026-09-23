@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function InboxPage({ searchParams }: { searchParams: Promise<{ note?: string }> }) {
   const { note: noteId } = await searchParams;
   const db = getDb();
-  tickRecurring(db);
+  await tickRecurring(db);
   const queue = (db.select().from(tasks).all() as (typeof tasks.$inferSelect)[])
     .filter((t) => t.status === "inbox" || t.status === "triaging");
   const templates = db.select().from(flowTemplates).all() as (typeof flowTemplates.$inferSelect)[];

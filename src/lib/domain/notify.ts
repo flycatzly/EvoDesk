@@ -75,7 +75,7 @@ async function pushTelegram(botToken: string, chatId: string, title: string, bod
 
 /** 发送通知(异步尽力而为):无渠道配置或全部失败都只返回结果,不抛出。 */
 export async function sendNotify(db: Db, event: NotifyEvent): Promise<{ sent: number; errors: string[] }> {
-  const cfg = notifyConfigFromKv(readSettingsKv(db).notify);
+  const cfg = notifyConfigFromKv((await readSettingsKv(db)).notify);
   if (cfg.channels.length === 0) return { sent: 0, errors: [] };
   if (!shouldSend(cfg, event.dedupeKey)) return { sent: 0, errors: ["deduped"] };
   const errors: string[] = [];

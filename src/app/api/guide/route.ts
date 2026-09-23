@@ -20,9 +20,9 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   // 源目录列表模式:页面首次加载用
   if (url.searchParams.get("list") === "1") {
-    return NextResponse.json({ dirs: guideDirsFromDb(db) });
+    return NextResponse.json({ dirs: await guideDirsFromDb(db) });
   }
-  const root = resolveGuideDir(db, url.searchParams.get("dir"));
+  const root = await resolveGuideDir(db, url.searchParams.get("dir"));
   if (!root) return NextResponse.json({ error: "目录不在宝典白名单内:先在下方添加文档源目录" }, { status: 400 });
   if (!fs.existsSync(root)) return NextResponse.json({ error: "目录不存在" }, { status: 400 });
 
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
   const db = getDb();
   const raw = await req.json().catch(() => null);
   const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
-  const root = resolveGuideDir(db, body && typeof body.dir === "string" ? body.dir : null);
+  const root = await resolveGuideDir(db, body && typeof body.dir === "string" ? body.dir : null);
   if (!root) return NextResponse.json({ error: "目录不在宝典白名单内" }, { status: 400 });
   const relPath = body && typeof body.path === "string" ? body.path : "";
   try {
@@ -64,7 +64,7 @@ export async function PUT(req: NextRequest) {
   const db = getDb();
   const raw = await req.json().catch(() => null);
   const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
-  const root = resolveGuideDir(db, body && typeof body.dir === "string" ? body.dir : null);
+  const root = await resolveGuideDir(db, body && typeof body.dir === "string" ? body.dir : null);
   if (!root) return NextResponse.json({ error: "目录不在宝典白名单内" }, { status: 400 });
   const relPath = body && typeof body.path === "string" ? body.path : "";
   const content = body && typeof body.content === "string" ? body.content : null;

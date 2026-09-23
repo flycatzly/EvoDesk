@@ -10,8 +10,8 @@ import { TtsSettings } from "@/components/TtsSettings";
 
 export const dynamic = "force-dynamic";
 
-export default function SettingsPage() {
-  const kv = readSettingsKv(getDb());
+export default async function SettingsPage() {
+  const kv = await readSettingsKv(getDb());
   return (
     <div className="max-w-3xl">
       <h1 className="text-xl font-bold mb-4">设置</h1>

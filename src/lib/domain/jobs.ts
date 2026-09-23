@@ -142,12 +142,12 @@ export type SpawnOptions = {
 };
 
 /** 启动脚本进程,stdout 增量累积;结束时按 RESULT: 行入库(仅 scrape) */
-export function spawnJobsScript({ kind, args, db, params = {}, scriptPath: scriptOverride }: SpawnOptions): { runId: string } | { error: string } {
+export async function spawnJobsScript({ kind, args, db, params = {}, scriptPath: scriptOverride }: SpawnOptions): Promise<{ runId: string } | { error: string }> {
   sweepStaleRuns(db);
   if (currentRun()) return { error: "已有任务在运行,请等待完成或查看运行记录" };
   const scriptPath = scriptOverride ?? path.join(process.cwd(), "scripts", "boss_cdp_raw.py");
   if (!fs.existsSync(scriptPath)) return { error: "缺少 scripts/boss_cdp_raw.py" };
-  const kv = readSettingsKv(db);
+  const kv = await readSettingsKv(db);
   const pythonCmd = typeof kv.boss_python_cmd === "string" && kv.boss_python_cmd.trim() ? kv.boss_python_cmd.trim() : "python";
 
   const nowIso = new Date().toISOString();

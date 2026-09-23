@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   let sourceKind: "vault" | "guide" = "vault";
   if (!root && rootParam) {
     const { resolveGuideDir } = await import("@/lib/domain/guide");
-    const hit = resolveGuideDir(db, rootParam);
+    const hit = await resolveGuideDir(db, rootParam);
     if (hit) { root = hit; sourceKind = "guide"; }
   }
   if (!root) return NextResponse.json({ error: "无可用资料库" }, { status: 400 });

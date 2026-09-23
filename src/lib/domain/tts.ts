@@ -23,10 +23,10 @@ export interface TtsParams {
   maxTokens: number;
 }
 
-export function ttsConfig(db: Db): {
+export async function ttsConfig(db: Db): Promise<{
   base: string; voice: string; lang: string; voicesDir: string; params: TtsParams;
-} {
-  const kv = readSettingsKv(db);
+}> {
+  const kv = await readSettingsKv(db);
   const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
   return {
     base: typeof kv.tts_base_url === "string" && kv.tts_base_url.trim() ? kv.tts_base_url.trim().replace(/\/$/, "") : TTS_DEFAULT_BASE,
@@ -45,14 +45,14 @@ export function ttsConfig(db: Db): {
 }
 
 /** 音色 → 语言标签映射(注册时标注,存 settings.tts_voice_langs) */
-export function voiceLangs(db: Db): Record<string, string> {
-  const kv = readSettingsKv(db);
+export async function voiceLangs(db: Db): Promise<Record<string, string>> {
+  const kv = await readSettingsKv(db);
   return kv.tts_voice_langs && typeof kv.tts_voice_langs === "object" ? (kv.tts_voice_langs as Record<string, string>) : {};
 }
 
 /** 探测服务在线状态(3s 超时);在线时附带健康负载。 */
 export async function ttsStatus(db: Db): Promise<{ online: boolean; base: string; voice: string; lang: string; health?: unknown }> {
-  const { base, voice, lang } = ttsConfig(db);
+  const { base, voice, lang } = await ttsConfig(db);
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 3000);
@@ -134,8 +134,8 @@ export type VoiceInfo = { name: string; lang?: string; frames?: number; referenc
 
 /** 已注册音色列表(合并语言标签) */
 export async function listVoices(db: Db): Promise<{ online: boolean; base: string; voices: VoiceInfo[] }> {
-  const { base } = ttsConfig(db);
-  const langs = voiceLangs(db);
+  const { base } = await ttsConfig(db);
+  const langs = await voiceLangs(db);
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4000);
@@ -162,7 +162,7 @@ export async function listVoices(db: Db): Promise<{ online: boolean; base: strin
 
 /** 音色注册(克隆)能力是否可用 */
 export async function registrationAvailable(db: Db): Promise<boolean> {
-  const { base } = ttsConfig(db);
+  const { base } = await ttsConfig(db);
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4000);
@@ -177,9 +177,9 @@ export async function registrationAvailable(db: Db): Promise<boolean> {
 }
 
 /** 删除本地音色目录(voices/<name>/;name 做路径段校验防穿越) */
-export function deleteVoice(db: Db, name: string): { ok: boolean; error?: string } {
+export async function deleteVoice(db: Db, name: string): Promise<{ ok: boolean; error?: string }> {
   if (!name || /[\/:*?"<>|]/.test(name) || name === "." || name === "..") return { ok: false, error: "非法音色名" };
-  const { voicesDir } = ttsConfig(db);
+  const { voicesDir } = await ttsConfig(db);
   const dir = path.join(path.resolve(voicesDir), path.basename(name));
   if (!fs.existsSync(dir)) return { ok: false, error: "音色不存在" };
   fs.rmSync(dir, { recursive: true, force: true });
@@ -233,7 +233,7 @@ export async function ttsSpeak(
   text: string,
   opts: SpeakOptions = {},
 ): Promise<SpeakResult> {
-  const { base, voice, params } = ttsConfig(db);
+  const { base, voice, params } = await ttsConfig(db);
   const clean = text.trim();
   if (!clean) throw new Error("text 必填");
   if (clean.length > TTS_MAX_CHARS) throw new Error(`文本过长(${clean.length} 字符),请分次转换(上限 ${TTS_MAX_CHARS})`);

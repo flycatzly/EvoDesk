@@ -20,7 +20,7 @@ function pickExecutor(db: Db) {
 // 周报生成:POST {} → 汇总本周 stats → AI 图文周报(markdown)→ 存为笔记(source='manual',标题带日期)
 export async function POST(_req: NextRequest) {
   const db = await getAnyDb();
-  const kv = readSettingsKv(db);
+  const kv = await readSettingsKv(db);
   const tz = typeof kv.timezone === "string" ? kv.timezone : "";
   const stats = buildStats(db, new Date(), tz);
 

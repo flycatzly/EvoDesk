@@ -14,15 +14,15 @@ const MAX_ENTRIES = 4000;
 const MAX_HASH_BYTES = 32 * 1024 * 1024; // 超过 32MB 不参与哈希去重
 
 /** settings.organize_dirs(JSON 数组;白名单) */
-export function organizeDirsFromDb(): string[] {
-  const kv = readSettingsKv(getDb());
+export async function organizeDirsFromDb(): Promise<string[]> {
+  const kv = await readSettingsKv(getDb());
   const raw = kv.organize_dirs;
   if (!Array.isArray(raw)) return [];
   return raw.filter((d): d is string => typeof d === "string" && d.trim().length > 0).map(expandHome);
 }
 
-export function resolveOrganizeDir(dir: string | null): string | null {
-  const whitelist = organizeDirsFromDb();
+export async function resolveOrganizeDir(dir: string | null): Promise<string | null> {
+  const whitelist = await organizeDirsFromDb();
   if (!dir) return whitelist[0] ?? null;
   const abs = expandHome(dir);
   return whitelist.find((w) => path.resolve(w) === path.resolve(abs)) ?? null;
@@ -108,7 +108,7 @@ export function scanDir(root: string, withDupes: boolean): { entries: ScanEntry[
 // GET /api/files/scan?dir=&dupes=1:白名单目录扫描 + 类型统计 + 可选同内容重复分组
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const root = resolveOrganizeDir(url.searchParams.get("dir"));
+  const root = await resolveOrganizeDir(url.searchParams.get("dir"));
   if (!root) return NextResponse.json({ error: "目录不在整理白名单内:先在下方添加要整理的目录" }, { status: 400 });
   if (!fs.existsSync(root)) return NextResponse.json({ error: "目录不存在" }, { status: 400 });
   const result = scanDir(root, url.searchParams.get("dupes") === "1");

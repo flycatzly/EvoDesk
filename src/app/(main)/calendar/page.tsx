@@ -10,9 +10,9 @@ export const dynamic = "force-dynamic";
 export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
   const { m } = await searchParams;
   const db = getDb();
-  tickRecurring(db); // 到期补投,保证循环任务的未来 dueDate 上墙(同仪表盘/GET /api/tasks 口径)
+  await tickRecurring(db); // 到期补投,保证循环任务的未来 dueDate 上墙(同仪表盘/GET /api/tasks 口径)
   // 读 settings KV:timezone 决定"今天"边界与非法 m 回退时的"当月"
-  const kv = readSettingsKv(db);
+  const kv = await readSettingsKv(db);
   const todayStr = tzToday(typeof kv.timezone === "string" ? kv.timezone : "");
   // 非法 m(非 YYYY-MM 格式,或月份越界如 2026-13)回退当月
   const monthValid = typeof m === "string" && /^\d{4}-\d{2}$/.test(m) && Number(m.slice(5, 7)) >= 1 && Number(m.slice(5, 7)) <= 12;

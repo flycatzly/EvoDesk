@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   if (!isValidSkillSlug(name)) {
     return NextResponse.json({ error: "技能名须为小写字母/数字/连字符(1-64 位)" }, { status: 400 });
   }
-  const whitelist = skillsDirsFromSettings(getDb());
+  const whitelist = await skillsDirsFromSettings(getDb());
   const requestedDir = body && typeof body.dir === "string" && body.dir.trim() ? expandHome(body.dir.trim()) : whitelist[0];
   const dir = whitelist.find((d) => path.resolve(d) === path.resolve(requestedDir ?? ""));
   if (!dir) {
