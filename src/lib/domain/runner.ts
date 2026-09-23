@@ -38,9 +38,6 @@ export async function startRun(db: Db, taskId: string): Promise<{ runId: string 
   const task = (await db.select().from(tasks).where(eq(tasks.id, taskId)))[0] as typeof tasks.$inferSelect | undefined;
   if (!task) throw new RunError("任务不存在", 404);
   if (task.status !== "ready") throw new RunError(`任务状态为 ${task.status},仅就绪任务可开始执行`);
-  // 防重入兜底:任务可能被手工挪回 ready 但旧 run 仍在进行,禁止二次开始(状态机外的漏洞)
-  const activeRuns = await db.select().from(flowRuns).where(and(eq(flowRuns.taskId, taskId), inArray(flowRuns.status, ["running", "waiting_human"])));
-  if (activeRuns.length > 0) throw new RunError("该任务已有进行中的执行");
   if (!task.flowTemplateId) throw new RunError("任务未绑定流程模板,请先在收件箱完成分诊确认");
   const tpl = (await db.select().from(flowTemplates).where(eq(flowTemplates.id, task.flowTemplateId)))[0] as typeof flowTemplates.$inferSelect | undefined;
   if (!tpl || tpl.status !== "active") throw new RunError("绑定的流程模板不存在或未激活");
@@ -51,20 +48,32 @@ export async function startRun(db: Db, taskId: string): Promise<{ runId: string 
     id: crypto.randomUUID(), runId, stepIndex: i, stepName: s.name,
     executorType: s.type, status: "pending" as const, attempt: 1, rejected: 0,
   }));
+  const runRow = { id: runId, taskId, templateId: tpl.id, templateVersion: tpl.version, status: "running" as const, startedAt: nowIso };
+  // 防重入:检查必须在写锁事务内**重读**完成——事务外的 check-then-insert 在并发 start 下
+  // 会全部通过检查并创建多个 run(2026-09-23 实测 8 并发产出 8 个 run)。
   if (dbDialect() === "mysql") {
-    // mysql 侧事务回调必须是 async(语句等待 execute);sqlite 侧保持同步回调(better-sqlite3 事务不能返回 promise)
-    const mydb = db as unknown as { transaction: (cb: (tx: Pick<Db, "insert" | "update">) => Promise<void>) => Promise<unknown> };
+    // mysql 侧事务回调必须是 async;select for update 行锁使并发请求串行化后重读
+    const mydb = db as unknown as {
+      transaction: (cb: (tx: { select: Db["select"]; insert: Db["insert"]; update: Db["update"] }) => Promise<void>, cfg?: { behavior?: string }) => Promise<unknown>;
+    };
     await mydb.transaction(async (tx) => {
-      await tx.insert(flowRuns).values({ id: runId, taskId, templateId: tpl.id, templateVersion: tpl.version, status: "running", startedAt: nowIso });
+      // mysql:select for update 行锁串行化并发;类型借用 sqlite select,运行时为 mysql 构建器
+      const locking = tx.select().from(flowRuns).where(and(eq(flowRuns.taskId, taskId), inArray(flowRuns.status, ["running", "waiting_human"]))) as unknown as { for: (mode: string) => Promise<(typeof flowRuns.$inferSelect)[]> };
+      const actives = await locking.for("update");
+      if (actives.length > 0) throw new RunError("该任务已有进行中的执行");
+      await tx.insert(flowRuns).values(runRow);
       await tx.insert(stepRuns).values(stepRows);
       await tx.update(tasks).set({ status: "running", updatedAt: nowIso }).where(eq(tasks.id, taskId));
     });
   } else {
+    // immediate 写锁:并发 start 在 BEGIN 即排队,进来后重读 active run 自然跳过
     db.transaction((tx) => {
-      tx.insert(flowRuns).values({ id: runId, taskId, templateId: tpl.id, templateVersion: tpl.version, status: "running", startedAt: nowIso }).run();
+      const actives = tx.select().from(flowRuns).where(and(eq(flowRuns.taskId, taskId), inArray(flowRuns.status, ["running", "waiting_human"]))).all() as (typeof flowRuns.$inferSelect)[];
+      if (actives.length > 0) throw new RunError("该任务已有进行中的执行");
+      tx.insert(flowRuns).values(runRow).run();
       for (const row of stepRows) tx.insert(stepRuns).values(row).run();
       tx.update(tasks).set({ status: "running", updatedAt: nowIso }).where(eq(tasks.id, taskId)).run();
-    });
+    }, { behavior: "immediate" });
   }
   return { runId };
 }
